@@ -65,6 +65,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     fullscreen: true,
     show: false,
+    icon: path.join(__dirname, "app-icon.ico"),
     autoHideMenuBar: true,
     backgroundColor: "#070b13",
     webPreferences: {

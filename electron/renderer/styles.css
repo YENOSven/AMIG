@@ -3,6 +3,10 @@
   background: #070b13;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
+  --cyan: #58e6c2;
+  --coral: #ff647c;
+  --gold: #f6c453;
+  --panel: rgba(11, 18, 31, 0.9);
 }
 
 * {
@@ -21,6 +25,7 @@ body,
 body {
   min-height: 100vh;
   overflow: hidden;
+  background: #070b13;
 }
 
 button,
@@ -46,6 +51,7 @@ button {
 }
 
 .auth-layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 460px);
   place-items: center;
@@ -55,12 +61,75 @@ button {
   padding: 48px;
 }
 
+.auth-layout::before,
+.menu-shell::before {
+  position: fixed;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(5, 9, 16, 0.2), rgba(5, 9, 16, 0.7)),
+    url("./assets/generated/menu-battlefield.webp") center / cover no-repeat;
+  filter: saturate(0.85);
+}
+
+.auth-layout::after,
+.menu-shell::after {
+  position: fixed;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 23% 45%, rgba(88, 230, 194, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(5, 9, 16, 0.12), rgba(5, 9, 16, 0.88));
+}
+
+.auth-layout > *,
+.menu-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand-lockup,
+.header-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-lockup {
+  margin-bottom: 48px;
+  font-size: 1.15rem;
+  letter-spacing: 0.22em;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(88, 230, 194, 0.55);
+  border-radius: 12px;
+  color: #07110f;
+  background: linear-gradient(145deg, #a7ffe9, #35cba7);
+  box-shadow: 0 0 36px rgba(88, 230, 194, 0.2);
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.brand-mark--small {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
 .game-intro h1,
 .menu-title h1 {
   margin: 10px 0 16px;
   font-size: clamp(3.5rem, 8vw, 7rem);
   line-height: 0.9;
   letter-spacing: -0.07em;
+  text-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 .game-intro > p:last-of-type,
@@ -87,9 +156,13 @@ button {
   border-radius: 22px;
   background-color: #101827;
   background-image:
+    linear-gradient(rgba(7, 11, 19, 0.2), rgba(7, 11, 19, 0.58)),
+    url("./assets/generated/menu-battlefield.webp"),
     linear-gradient(#26364d 1px, transparent 1px),
     linear-gradient(90deg, #26364d 1px, transparent 1px);
-  background-size: 42px 42px;
+  background-position: center;
+  background-size: cover, cover, 42px 42px, 42px 42px;
+  box-shadow: inset 0 0 65px rgba(0, 0, 0, 0.7), 0 28px 70px rgba(0, 0, 0, 0.24);
 }
 
 .preview-player {
@@ -130,8 +203,9 @@ button {
   padding: clamp(28px, 5vw, 48px);
   border: 1px solid #202b3d;
   border-radius: 24px;
-  background: rgba(15, 23, 38, 0.96);
-  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.35);
+  background: var(--panel);
+  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(18px);
 }
 
 .panel h1,
@@ -205,8 +279,16 @@ form button,
   border: 0;
   border-radius: 10px;
   color: #07110f;
-  background: #58e6c2;
+  background: linear-gradient(135deg, #8cf4dc, #42d2b0);
   font-weight: 900;
+  box-shadow: 0 10px 28px rgba(88, 230, 194, 0.14);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+form button:hover:not(:disabled),
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 36px rgba(88, 230, 194, 0.24);
 }
 
 button:disabled {
@@ -228,6 +310,12 @@ button:disabled {
   border-radius: 9px;
   color: #dbeafe;
   background: #121b2a;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.secondary-button:hover {
+  border-color: rgba(88, 230, 194, 0.65);
+  background: #172337;
 }
 
 .message {
@@ -250,11 +338,10 @@ button:disabled {
 }
 
 .menu-shell {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(88, 230, 194, 0.08), transparent 28rem),
-    #070b13;
+  background: #070b13;
 }
 
 .menu-header,
@@ -265,7 +352,8 @@ button:disabled {
   gap: 24px;
   padding: 18px 28px;
   border-bottom: 1px solid #202b3d;
-  background: rgba(10, 16, 28, 0.94);
+  background: rgba(7, 12, 21, 0.88);
+  backdrop-filter: blur(18px);
 }
 
 .menu-content {
@@ -278,6 +366,13 @@ button:disabled {
   max-width: 900px;
 }
 
+.menu-subtitle {
+  max-width: 650px;
+  margin: 0;
+  color: #aab6ca;
+  line-height: 1.6;
+}
+
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -286,6 +381,7 @@ button:disabled {
 }
 
 .mode-card {
+  position: relative;
   min-height: 240px;
   display: grid;
   align-content: end;
@@ -295,14 +391,28 @@ button:disabled {
   border-radius: 20px;
   text-align: left;
   color: #f8fafc;
-  background: linear-gradient(145deg, #121c2c, #0b111d);
-  transition: border-color 150ms ease, transform 150ms ease;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(18, 28, 44, 0.94), rgba(7, 12, 21, 0.96));
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.2);
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.mode-card::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: 0.18;
+  background:
+    radial-gradient(circle at 80% 10%, #58e6c2, transparent 35%),
+    linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.04));
 }
 
 .mode-card:hover,
 .mode-card:focus-visible {
   transform: translateY(-4px);
   border-color: #58e6c2;
+  box-shadow: 0 26px 65px rgba(0, 0, 0, 0.34);
   outline: none;
 }
 
@@ -352,6 +462,7 @@ button:disabled {
 .game-shell {
   display: grid;
   grid-template-rows: auto 1fr;
+  background: #070b13;
 }
 
 .battle-layout {
@@ -365,7 +476,9 @@ button:disabled {
   padding: 20px;
   overflow-y: auto;
   border-right: 1px solid #202b3d;
-  background: #0a101c;
+  background:
+    linear-gradient(180deg, rgba(88, 230, 194, 0.035), transparent 28%),
+    #090f1a;
 }
 
 .hud-stat {
@@ -437,7 +550,9 @@ button:disabled {
 
 .troop-button {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 42px 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
   gap: 3px 10px;
   padding: 12px;
   border: 1px solid #344158;
@@ -445,10 +560,21 @@ button:disabled {
   text-align: left;
   color: #f8fafc;
   background: #121b2a;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }
 
 .troop-button:hover:not(:disabled) {
   border-color: #58e6c2;
+  transform: translateX(3px);
+  background: #162236;
+}
+
+.troop-button img {
+  width: 38px;
+  height: 44px;
+  grid-row: 1 / 3;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.55));
 }
 
 .troop-button span {
@@ -457,7 +583,7 @@ button:disabled {
 }
 
 .troop-button small {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   color: #91a0b8;
 }
 
@@ -481,11 +607,17 @@ button:disabled {
   min-height: 0;
   display: grid;
   overflow: hidden;
-  background: #101827;
+  padding: 10px;
+  background:
+    radial-gradient(circle at center, rgba(88, 230, 194, 0.05), transparent 55%),
+    #080d16;
 }
 
 .game-canvas canvas {
   max-width: 100%;
+  border: 1px solid #26364d;
+  border-radius: 12px;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42);
 }
 
 code {

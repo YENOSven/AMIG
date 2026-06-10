@@ -41,7 +41,8 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "electron/app-icon.ico"
     },
     "mac": {
       "target": "dmg",

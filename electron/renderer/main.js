@@ -9,6 +9,11 @@ import {
 
 const app = document.querySelector("#app");
 const emailConfirmationUrl = "amig://auth/confirmed";
+const UNIT_ART = {
+  soldier: new URL("./assets/generated/soldier.png", import.meta.url).href,
+  ranger: new URL("./assets/generated/ranger.png", import.meta.url).href,
+  tank: new URL("./assets/generated/tank.png", import.meta.url).href,
+};
 let currentUser = null;
 let game = null;
 let roomChannel = null;
@@ -17,6 +22,28 @@ let activeRoom = null;
 let roomCleanupPromise = Promise.resolve();
 let leavingRoom = false;
 let roomHeartbeatTimer = null;
+let roomLaunchId = null;
+let roomLaunchTimer = null;
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function sendBroadcast(channel, event, payload, retries = 0) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const status = await Promise.race([
+        channel.send({ type: "broadcast", event, payload }),
+        wait(4000).then(() => "timed out"),
+      ]);
+      if (status === "ok") return true;
+    } catch {
+      // A brief channel interruption can recover before the next attempt.
+    }
+
+    if (attempt < retries) await wait(250 * (attempt + 1));
+  }
+
+  return false;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -97,11 +124,18 @@ async function clearRoomConnections() {
   roomChannel = null;
   clearInterval(roomHeartbeatTimer);
   roomHeartbeatTimer = null;
+  clearTimeout(roomLaunchTimer);
+  roomLaunchTimer = null;
 
-  roomCleanupPromise = roomCleanupPromise.then(async () => {
-    if (subscription) await supabase.removeChannel(subscription);
-    if (channel) await supabase.removeChannel(channel);
-  });
+  roomCleanupPromise = roomCleanupPromise
+    .catch(() => {})
+    .then(() =>
+      Promise.allSettled(
+        [subscription, channel]
+          .filter(Boolean)
+          .map((connection) => supabase.removeChannel(connection))
+      )
+    );
 
   return roomCleanupPromise;
 }
@@ -134,9 +168,10 @@ function renderAuth(mode = "login", notice = "") {
   app.innerHTML = `
     <main class="auth-layout">
       <section class="game-intro">
-        <p class="eyebrow">Online top-down PvP</p>
-        <h1>Enter the arena.</h1>
-        <p>Fight a bot or invite a friend with a private room code.</p>
+        <div class="brand-lockup"><span class="brand-mark">A</span><strong>AMIG</strong></div>
+        <p class="eyebrow">Online tactical PvP</p>
+        <h1>Command.<br />Conquer.</h1>
+        <p>Build your force, secure the gold mines, and break the enemy stronghold.</p>
         <div class="arena-preview" aria-hidden="true">
           <span class="preview-player player-one"></span>
           <span class="preview-player player-two"></span>
@@ -326,9 +361,12 @@ function renderMenu(notice = "") {
   app.innerHTML = `
     <main class="menu-shell">
       <header class="menu-header">
-        <div>
+        <div class="header-identity">
+          <span class="brand-mark brand-mark--small">A</span>
+          <div>
           <p class="eyebrow">Signed in as</p>
           <strong>${name}</strong>
+          </div>
         </div>
         <button id="sign-out" class="secondary-button" type="button">Log out</button>
       </header>
@@ -336,7 +374,8 @@ function renderMenu(notice = "") {
       <section class="menu-content">
         <div class="menu-title">
           <p class="eyebrow">Main menu</p>
-          <h1>Choose your fight.</h1>
+          <h1>Choose your campaign.</h1>
+          <p class="menu-subtitle">Every battle begins with the same resources. What happens next is command.</p>
           <p id="menu-message" class="message" hidden></p>
         </div>
 
@@ -443,6 +482,7 @@ async function joinRoom(event) {
 function renderRoomLobby(room, role) {
   stopGame();
   leavingRoom = false;
+  roomLaunchId = null;
   activeRoom = room;
   const isHost = role === "host";
   const opponentPresent = isHost ? Boolean(room.guest_id) : true;
@@ -472,9 +512,26 @@ function renderRoomLobby(room, role) {
   document.querySelector("#leave-room").addEventListener("click", leaveRoomAndReturn);
 
   if (opponentPresent) {
-    setTimeout(() => launchFriendGame(room, role), 700);
+    roomLaunchTimer = setTimeout(() => {
+      roomLaunchTimer = null;
+      launchFriendGame(room, role);
+    }, 700);
     return;
   }
+
+  const refreshRoom = async () => {
+    const { data: updatedRoom, error } = await supabase
+      .from("game_rooms")
+      .select()
+      .eq("id", room.id)
+      .single();
+
+    if (error || activeRoom?.id !== room.id) return;
+    activeRoom = updatedRoom;
+    if (updatedRoom.guest_id && roomLaunchId !== room.id) {
+      launchFriendGame(updatedRoom, role);
+    }
+  };
 
   roomSubscription = supabase
     .channel(`room-watch-${room.id}`)
@@ -487,19 +544,31 @@ function renderRoomLobby(room, role) {
         filter: `id=eq.${room.id}`,
       },
       ({ new: updatedRoom }) => {
-        if (updatedRoom.guest_id) {
+        activeRoom = updatedRoom;
+        if (updatedRoom.guest_id && roomLaunchId !== room.id) {
           launchFriendGame(updatedRoom, role);
         }
       }
     )
     .subscribe((status) => {
+      const roomStatus = document.querySelector("#room-status");
+      if (status === "SUBSCRIBED") {
+        if (roomStatus) roomStatus.textContent = "Waiting for your friend to join...";
+        refreshRoom();
+        return;
+      }
+
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        leaveRoomAndReturn("The room connection failed. Please try again.");
+        if (roomStatus) roomStatus.textContent = "Connection interrupted. Reconnecting...";
       }
     });
 }
 
 async function launchFriendGame(room, role) {
+  if (activeRoom?.id !== room.id || leavingRoom) return;
+  if (roomLaunchId === room.id) return;
+  roomLaunchId = room.id;
+
   if (roomSubscription) {
     await supabase.removeChannel(roomSubscription);
     roomSubscription = null;
@@ -526,6 +595,8 @@ async function launchFriendGame(room, role) {
 
   let hasSeenOpponent = false;
   let lastOpponentSignalAt = Date.now();
+  const connectionStartedAt = Date.now();
+  let subscribed = false;
 
   roomChannel
     .on("broadcast", { event: "heartbeat" }, () => {
@@ -542,9 +613,15 @@ async function launchFriendGame(room, role) {
 
       roomChannel.subscribe((status, error) => {
         if (status === "SUBSCRIBED") {
+          subscribed = true;
           clearTimeout(timeout);
           resolve();
         } else if (status === "CHANNEL_ERROR") {
+          subscribed = false;
+          if (roomLaunchId === room.id) {
+            document.querySelector("#connection-status")?.replaceChildren("Reconnecting...");
+          }
+          if (Date.now() - connectionStartedAt > 10000) return;
           clearTimeout(timeout);
           const message = String(error?.message || "");
           reject(
@@ -555,32 +632,35 @@ async function launchFriendGame(room, role) {
             )
           );
         } else if (status === "TIMED_OUT") {
+          subscribed = false;
+          if (Date.now() - connectionStartedAt > 10000) return;
           clearTimeout(timeout);
           reject(new Error("Room connection timed out."));
+        } else if (status === "CLOSED") {
+          subscribed = false;
         }
       });
     });
 
-    await roomChannel.send({
-      type: "broadcast",
-      event: "heartbeat",
-      payload: { userId: currentUser.id },
-    });
+    await sendBroadcast(roomChannel, "heartbeat", { userId: currentUser.id }, 1);
 
     roomHeartbeatTimer = setInterval(() => {
       if (!roomChannel) return;
 
-      roomChannel.send({
-        type: "broadcast",
-        event: "heartbeat",
-        payload: { userId: currentUser.id },
+      sendBroadcast(roomChannel, "heartbeat", { userId: currentUser.id }).then((sent) => {
+        const status = document.querySelector("#connection-status");
+        if (status) status.textContent = sent && subscribed ? "Connected" : "Reconnecting...";
       });
 
-      if (hasSeenOpponent && Date.now() - lastOpponentSignalAt > 6000) {
+      const opponentSilence = Date.now() - lastOpponentSignalAt;
+      if (hasSeenOpponent && opponentSilence > 20000) {
         leaveRoomAndReturn("Your friend disconnected from the match.", false);
+      } else if (!hasSeenOpponent && Date.now() - connectionStartedAt > 20000) {
+        leaveRoomAndReturn("Could not establish a connection with your friend.", false);
       }
-    }, 1500);
+    }, 2000);
   } catch (error) {
+    roomLaunchId = null;
     await leaveRoomAndReturn(playerError(error, "Could not connect to the room. Please try again."));
     return;
   }
@@ -602,6 +682,7 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
         <div>
           <p class="eyebrow">${mode === "bot" ? "Bot match" : `Room ${escapeHtml(roomCode)}`}</p>
           <strong>${escapeHtml(displayName(currentUser))}</strong>
+          ${mode === "friend" ? '<small id="connection-status">Connected</small>' : ""}
         </div>
         <button id="leave-match" class="secondary-button" type="button">Return to menu</button>
       </header>
@@ -609,17 +690,17 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
         <aside class="battle-hud">
           <div class="hud-stat">
             <span>Credits</span>
-            <strong id="hud-credits">350</strong>
-            <small><span id="hud-income">22</span> / sec</small>
+            <strong id="hud-credits">300</strong>
+            <small><span id="hud-income">14</span> / sec</small>
           </div>
           <div class="hud-health-grid">
             <div class="hud-stat">
               <span>Your base</span>
-              <strong id="hud-base">1200</strong>
+              <strong id="hud-base">1600</strong>
             </div>
             <div class="hud-stat">
               <span>Enemy base</span>
-              <strong id="hud-enemy-base">1200</strong>
+              <strong id="hud-enemy-base">1600</strong>
             </div>
           </div>
           <div class="mine-status">
@@ -629,13 +710,16 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
           <div class="troop-shop">
             <p class="eyebrow">Recruit troops</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
-              <strong>Soldier</strong><span>90</span><small>Balanced frontline fighter - Key 1</small>
+              <img src="${UNIT_ART.soldier}" alt="" />
+              <strong>Soldier</strong><span>100</span><small>Balanced frontline fighter - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
-              <strong>Ranger</strong><span>150</span><small>Mobile long-range support - Key 2</small>
+              <img src="${UNIT_ART.ranger}" alt="" />
+              <strong>Ranger</strong><span>170</span><small>Mobile long-range support - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
-              <strong>Tank</strong><span>260</span><small>Heavy, slower frontline unit - Key 3</small>
+              <img src="${UNIT_ART.tank}" alt="" />
+              <strong>Tank</strong><span>280</span><small>Low damage, extremely durable frontline - Key 3</small>
             </button>
           </div>
           <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
@@ -661,6 +745,9 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
 
   let commandHandler = null;
   let stateHandler = null;
+  let commandSequence = 0;
+  let stateSendInFlight = false;
+  let pendingState = null;
   if (channel) {
     channel
       .on("broadcast", { event: "match-command" }, ({ payload }) => commandHandler?.(payload))
@@ -680,19 +767,32 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
     },
     sendCommand: (command) => {
       if (!channel) return;
-      channel.send({
-        type: "broadcast",
-        event: "match-command",
-        payload: command,
+      const payload = {
+        ...command,
+        commandId: `${currentUser.id}:${Date.now()}:${commandSequence++}`,
+      };
+      sendBroadcast(channel, "match-command", payload, 2).then((sent) => {
+        if (!sent) {
+          const status = document.querySelector("#connection-status");
+          if (status) status.textContent = "Command delayed - reconnecting...";
+        }
       });
     },
     sendState: (state) => {
       if (!channel) return;
-      channel.send({
-        type: "broadcast",
-        event: "match-state",
-        payload: state,
-      });
+      pendingState = state;
+      if (stateSendInFlight) return;
+
+      const flushState = async () => {
+        stateSendInFlight = true;
+        while (pendingState && channel === roomChannel) {
+          const nextState = pendingState;
+          pendingState = null;
+          await sendBroadcast(channel, "match-state", nextState);
+        }
+        stateSendInFlight = false;
+      };
+      flushState();
     },
     onHud: (hud) => {
       const credits = document.querySelector("#hud-credits");
@@ -728,13 +828,10 @@ async function leaveRoomAndReturn(notice = "", notifyPeer = true) {
     const room = activeRoom;
     const channel = roomChannel;
     activeRoom = null;
+    roomLaunchId = null;
 
-  if (channel && notifyPeer) {
-      await channel.send({
-        type: "broadcast",
-        event: "peer-left",
-        payload: { userId: currentUser?.id },
-      });
+    if (channel && notifyPeer) {
+      await sendBroadcast(channel, "peer-left", { userId: currentUser?.id });
     }
 
     stopGame();

@@ -78,7 +78,7 @@ requires an Apple Developer ID certificate and notarization.
 - Click empty ground after selecting troops to direct them there. Right click
   also issues a formation move command.
 - Troops automatically attack enemies and bases in range.
-- Capture the top and bottom gold mines for `+8` credits per second each.
+- Capture the top and bottom gold mines for `+6` credits per second each.
 - Mines reset to full health when captured and can be recaptured by attacking
   them with troops.
 - Destroy the enemy base to win.
