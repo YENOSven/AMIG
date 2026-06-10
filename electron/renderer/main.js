@@ -610,6 +610,7 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
           <div class="hud-stat">
             <span>Credits</span>
             <strong id="hud-credits">350</strong>
+            <small><span id="hud-income">22</span> / sec</small>
           </div>
           <div class="hud-health-grid">
             <div class="hud-stat">
@@ -621,21 +622,26 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
               <strong id="hud-enemy-base">1200</strong>
             </div>
           </div>
+          <div class="mine-status">
+            <div><span>Your mines</span><strong id="hud-mines">0</strong></div>
+            <div><span>Enemy mines</span><strong id="hud-enemy-mines">0</strong></div>
+          </div>
           <div class="troop-shop">
             <p class="eyebrow">Recruit troops</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
-              <strong>Soldier</strong><span>100</span><small>Fast frontline unit - Key 1</small>
+              <strong>Soldier</strong><span>90</span><small>Fast, durable frontline - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
-              <strong>Ranger</strong><span>160</span><small>Long-range damage - Key 2</small>
+              <strong>Ranger</strong><span>150</span><small>Fragile long-range damage - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
-              <strong>Tank</strong><span>280</span><small>Heavy and durable - Key 3</small>
+              <strong>Tank</strong><span>260</span><small>Slow defensive powerhouse - Key 3</small>
             </button>
           </div>
           <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
           <p class="hud-help">
-            Select with left click. Hold Shift for multiple units. Right click to command them.
+            Click a troop to select it, then click the ground to direct it. Hold Shift for groups.
+            Click a gold mine to attack and capture it for bonus income.
           </p>
           <p class="hud-selected"><span id="hud-selected">0</span> selected</p>
         </aside>
@@ -692,8 +698,11 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
       const credits = document.querySelector("#hud-credits");
       if (!credits) return;
       credits.textContent = hud.credits;
+      document.querySelector("#hud-income").textContent = hud.income;
       document.querySelector("#hud-base").textContent = hud.baseHealth;
       document.querySelector("#hud-enemy-base").textContent = hud.enemyBaseHealth;
+      document.querySelector("#hud-mines").textContent = hud.ownedMines;
+      document.querySelector("#hud-enemy-mines").textContent = hud.enemyMines;
       document.querySelector("#hud-selected").textContent = hud.selected;
       document.querySelectorAll("[data-unit-type]").forEach((button) => {
         button.disabled = hud.credits < hud.costs[button.dataset.unitType];

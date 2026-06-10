@@ -388,11 +388,41 @@ button:disabled {
   font-size: 1.5rem;
 }
 
+.hud-stat small {
+  color: #91a0b8;
+}
+
 .hud-health-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
+}
+
+.mine-status {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mine-status div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid #4a4126;
+  border-radius: 9px;
+  background: #1c1a12;
+}
+
+.mine-status span {
+  color: #c9b96f;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.mine-status strong {
+  color: #f6c453;
 }
 
 .hud-health-grid .hud-stat strong {

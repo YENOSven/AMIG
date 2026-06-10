@@ -8,38 +8,44 @@ const GUEST_BASE_X = WORLD_WIDTH - 105;
 const STARTING_CREDITS = 350;
 const MAX_CREDITS = 9999;
 const INCOME_PER_SECOND = 22;
+const MINE_INCOME_PER_SECOND = 12;
+const MINE_MAX_HEALTH = 500;
 const SNAPSHOT_INTERVAL = 100;
 const MAX_UNITS_PER_TEAM = 30;
+const MINE_DEFINITIONS = [
+  { id: "top", x: WORLD_WIDTH / 2, y: 165, label: "TOP MINE" },
+  { id: "bottom", x: WORLD_WIDTH / 2, y: WORLD_HEIGHT - 145, label: "BOTTOM MINE" },
+];
 
 const UNIT_TYPES = {
   soldier: {
     label: "Soldier",
-    cost: 100,
-    health: 120,
-    damage: 16,
-    range: 55,
-    speed: 82,
-    cooldown: 650,
+    cost: 90,
+    health: 140,
+    damage: 14,
+    range: 58,
+    speed: 88,
+    cooldown: 600,
     radius: 13,
   },
   ranger: {
     label: "Ranger",
-    cost: 160,
-    health: 80,
-    damage: 24,
-    range: 175,
-    speed: 72,
-    cooldown: 900,
+    cost: 150,
+    health: 85,
+    damage: 25,
+    range: 190,
+    speed: 68,
+    cooldown: 850,
     radius: 11,
   },
   tank: {
     label: "Tank",
-    cost: 280,
-    health: 360,
-    damage: 42,
-    range: 75,
-    speed: 45,
-    cooldown: 1250,
+    cost: 260,
+    health: 320,
+    damage: 34,
+    range: 72,
+    speed: 46,
+    cooldown: 1100,
     radius: 18,
   },
 };
@@ -71,17 +77,30 @@ class BattleScene extends Phaser.Scene {
     this.credits = { host: STARTING_CREDITS, guest: STARTING_CREDITS };
     this.baseHealth = { host: 1200, guest: 1200 };
     this.baseMaxHealth = 1200;
+    this.mines = new Map(
+      MINE_DEFINITIONS.map((mine) => [
+        mine.id,
+        {
+          ...mine,
+          owner: null,
+          health: MINE_MAX_HEALTH,
+          maxHealth: MINE_MAX_HEALTH,
+        },
+      ])
+    );
     this.nextUnitId = 1;
     this.lastSnapshotAt = 0;
     this.lastIncomeAt = 0;
     this.lastAiPurchaseAt = 0;
     this.lastAiCommandAt = 0;
     this.finished = false;
+    this.lastCommandMarker = null;
   }
 
   create() {
     this.drawArena();
     this.createBases();
+    this.createMines();
     this.createSelectionMarker();
     this.registerInput();
     this.registerGameEvents();
@@ -89,7 +108,7 @@ class BattleScene extends Phaser.Scene {
     this.updateHud();
 
     this.add
-      .text(22, 18, "Left click units to select | Right click to move/attack | Esc returns to menu", {
+      .text(22, 18, "Select a unit, then click the ground to command it | Right click also commands", {
         color: "#dbeafe",
         fontFamily: "system-ui",
         fontSize: "15px",
@@ -146,6 +165,34 @@ class BattleScene extends Phaser.Scene {
     }
   }
 
+  createMines() {
+    this.mineViews = new Map();
+
+    for (const mine of this.mines.values()) {
+      const zone = this.add.circle(mine.x, mine.y, 58, 0xf6c453, 0.07).setStrokeStyle(2, 0xf6c453, 0.35);
+      const body = this.add.polygon(
+        mine.x,
+        mine.y,
+        [0, -28, 25, -13, 25, 15, 0, 31, -25, 15, -25, -13],
+        0xf6c453,
+        0.9
+      );
+      const core = this.add.circle(mine.x, mine.y, 10, 0xffec99, 1);
+      const healthBack = this.add.rectangle(mine.x, mine.y - 48, 90, 8, 0x172033);
+      const healthFill = this.add.rectangle(mine.x - 45, mine.y - 48, 90, 8, 0xf6c453).setOrigin(0, 0.5);
+      const label = this.add
+        .text(mine.x, mine.y + 48, mine.label, {
+          color: "#f8df91",
+          fontFamily: "system-ui",
+          fontSize: "12px",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5);
+
+      this.mineViews.set(mine.id, { zone, body, core, healthBack, healthFill, label });
+    }
+  }
+
   createSelectionMarker() {
     this.selectionMarker = this.add.graphics().setDepth(12);
   }
@@ -162,13 +209,18 @@ class BattleScene extends Phaser.Scene {
       const unit = this.findUnitAt(pointer.worldX, pointer.worldY, this.localTeam);
       const additive = Boolean(pointer.event?.shiftKey);
 
-      if (!additive) this.selectedIds.clear();
       if (unit) {
+        if (!additive) this.selectedIds.clear();
         if (additive && this.selectedIds.has(unit.id)) {
           this.selectedIds.delete(unit.id);
         } else {
           this.selectedIds.add(unit.id);
         }
+      } else if (this.selectedIds.size > 0) {
+        this.issueMoveCommand(pointer.worldX, pointer.worldY);
+        return;
+      } else if (!additive) {
+        this.selectedIds.clear();
       }
 
       this.redrawSelection();
@@ -222,11 +274,14 @@ class BattleScene extends Phaser.Scene {
 
     const target = clampPoint(x, y);
     if (!target) return;
+    const mine = this.findMineAt(target.x, target.y);
+    this.showCommandMarker(target.x, target.y);
     const command = {
       action: "move",
       unitIds: unitIds.slice(0, MAX_UNITS_PER_TEAM),
       x: target.x,
       y: target.y,
+      objectiveId: mine?.id || null,
     };
 
     if (this.isAuthority) {
@@ -234,6 +289,33 @@ class BattleScene extends Phaser.Scene {
     } else {
       this.options.sendCommand?.(command);
     }
+  }
+
+  findMineAt(x, y) {
+    return [...this.mines.values()].find(
+      (mine) => Phaser.Math.Distance.Between(x, y, mine.x, mine.y) <= 62
+    );
+  }
+
+  showCommandMarker(x, y) {
+    this.lastCommandMarker?.destroy();
+
+    const marker = this.add.circle(x, y, 15, TEAM_COLORS[this.localTeam], 0.12)
+      .setStrokeStyle(3, TEAM_COLORS[this.localTeam], 0.95)
+      .setDepth(15);
+    this.lastCommandMarker = marker;
+
+    this.tweens.add({
+      targets: marker,
+      scale: 2.1,
+      alpha: 0,
+      duration: 520,
+      ease: "Cubic.Out",
+      onComplete: () => {
+        if (this.lastCommandMarker === marker) this.lastCommandMarker = null;
+        marker.destroy();
+      },
+    });
   }
 
   applyCommand(team, command) {
@@ -247,6 +329,8 @@ class BattleScene extends Phaser.Scene {
     if (command.action === "move" && Array.isArray(command.unitIds)) {
       const target = clampPoint(command.x, command.y);
       if (!target) return;
+      const objective =
+        typeof command.objectiveId === "string" ? this.mines.get(command.objectiveId) : null;
       const ownedUnits = command.unitIds
         .slice(0, MAX_UNITS_PER_TEAM)
         .map((id) => this.units.get(String(id)))
@@ -257,8 +341,9 @@ class BattleScene extends Phaser.Scene {
         const row = Math.floor(index / 4);
         const direction = team === "host" ? -1 : 1;
         unit.order = {
-          x: Phaser.Math.Clamp(target.x + direction * row * 24, 45, WORLD_WIDTH - 45),
-          y: Phaser.Math.Clamp(target.y + (column - 1.5) * 26, 75, WORLD_HEIGHT - 45),
+          x: Phaser.Math.Clamp((objective?.x ?? target.x) + direction * row * 24, 45, WORLD_WIDTH - 45),
+          y: Phaser.Math.Clamp((objective?.y ?? target.y) + (column - 1.5) * 26, 75, WORLD_HEIGHT - 45),
+          objectiveId: objective?.id || null,
         };
       });
     }
@@ -375,9 +460,22 @@ class BattleScene extends Phaser.Scene {
     const elapsed = time - this.lastIncomeAt;
     if (elapsed < 250) return;
 
-    const income = INCOME_PER_SECOND * (elapsed / 1000);
-    this.credits.host = Math.min(MAX_CREDITS, this.credits.host + income);
-    this.credits.guest = Math.min(MAX_CREDITS, this.credits.guest + income);
+    const elapsedSeconds = elapsed / 1000;
+    const controlledMines = { host: 0, guest: 0 };
+    for (const mine of this.mines.values()) {
+      if (mine.owner) controlledMines[mine.owner] += 1;
+    }
+
+    this.credits.host = Math.min(
+      MAX_CREDITS,
+      this.credits.host +
+        (INCOME_PER_SECOND + controlledMines.host * MINE_INCOME_PER_SECOND) * elapsedSeconds
+    );
+    this.credits.guest = Math.min(
+      MAX_CREDITS,
+      this.credits.guest +
+        (INCOME_PER_SECOND + controlledMines.guest * MINE_INCOME_PER_SECOND) * elapsedSeconds
+    );
     this.lastIncomeAt = time;
     this.updateHud();
   }
@@ -392,7 +490,7 @@ class BattleScene extends Phaser.Scene {
       if (target && target.distance <= definition.range) {
         if (time - unit.lastAttackAt >= definition.cooldown) {
           unit.lastAttackAt = time;
-          this.damageTarget(target, definition.damage);
+          this.damageTarget(target, definition.damage, unit.team);
           this.showAttackPulse(unit, target);
         }
         continue;
@@ -405,6 +503,25 @@ class BattleScene extends Phaser.Scene {
 
   findCombatTarget(unit) {
     const enemyTeam = unit.team === "host" ? "guest" : "host";
+    const orderedMine = unit.order?.objectiveId ? this.mines.get(unit.order.objectiveId) : null;
+
+    if (orderedMine) {
+      if (orderedMine.owner === unit.team) {
+        unit.order = null;
+      } else {
+        return {
+          kind: "mine",
+          entity: orderedMine,
+          x: orderedMine.x,
+          y: orderedMine.y,
+          distance: Math.max(
+            0,
+            Phaser.Math.Distance.Between(unit.x, unit.y, orderedMine.x, orderedMine.y) - 30
+          ),
+        };
+      }
+    }
+
     let closest = null;
 
     for (const enemy of this.units.values()) {
@@ -439,15 +556,27 @@ class BattleScene extends Phaser.Scene {
     unit.y += ((y - unit.y) / distance) * step;
   }
 
-  damageTarget(target, damage) {
+  damageTarget(target, damage, attackingTeam) {
     if (target.kind === "unit") {
       target.entity.health -= damage;
       if (target.entity.health <= 0) {
         this.units.delete(target.entity.id);
         this.destroyUnitView(target.entity.id);
       }
-    } else {
+    } else if (target.kind === "base") {
       this.baseHealth[target.team] = Math.max(0, this.baseHealth[target.team] - damage);
+    } else if (target.kind === "mine") {
+      target.entity.health -= damage;
+      if (target.entity.health <= 0) {
+        target.entity.owner = attackingTeam;
+        target.entity.health = target.entity.maxHealth;
+        for (const unit of this.units.values()) {
+          if (unit.order?.objectiveId === target.entity.id && unit.team === attackingTeam) {
+            unit.order = null;
+          }
+        }
+        this.updateHud();
+      }
     }
   }
 
@@ -477,11 +606,14 @@ class BattleScene extends Phaser.Scene {
       const unitIds = [...this.units.values()]
         .filter((unit) => unit.team === "guest")
         .map((unit) => unit.id);
+      const contestedMine = [...this.mines.values()].find((mine) => mine.owner !== "guest");
+      const shouldContestMine = contestedMine && Phaser.Math.Between(0, 99) < 65;
       this.applyCommand("guest", {
         action: "move",
         unitIds,
-        x: HOST_BASE_X + 80,
-        y: Phaser.Math.Between(220, 500),
+        x: shouldContestMine ? contestedMine.x : HOST_BASE_X + 80,
+        y: shouldContestMine ? contestedMine.y : Phaser.Math.Between(220, 500),
+        objectiveId: shouldContestMine ? contestedMine.id : null,
       });
       this.lastAiCommandAt = time;
     }
@@ -548,6 +680,21 @@ class BattleScene extends Phaser.Scene {
       this.baseViews[team].healthFill.width = 130 * ratio;
     }
 
+    for (const mine of this.mines.values()) {
+      const view = this.mineViews.get(mine.id);
+      const color = mine.owner ? TEAM_COLORS[mine.owner] : 0xf6c453;
+      const ratio = Phaser.Math.Clamp(mine.health / mine.maxHealth, 0, 1);
+      view.zone.setFillStyle(color, 0.08).setStrokeStyle(2, color, 0.4);
+      view.body.setFillStyle(color, 0.9);
+      view.core.setFillStyle(mine.owner ? 0xffffff : 0xffec99, 1);
+      view.healthFill.setFillStyle(color, 1);
+      view.healthFill.width = 90 * ratio;
+      view.label.setText(
+        `${mine.label} - ${mine.owner ? mine.owner.toUpperCase() : "NEUTRAL"}`
+      );
+      view.label.setColor(mine.owner ? (mine.owner === "host" ? "#8ef4dc" : "#ff9dad") : "#f8df91");
+    }
+
     this.redrawSelection();
   }
 
@@ -569,10 +716,19 @@ class BattleScene extends Phaser.Scene {
 
   updateHud() {
     const selected = [...this.selectedIds].filter((id) => this.units.get(id)?.team === this.localTeam).length;
+    const mineCounts = { host: 0, guest: 0 };
+    for (const mine of this.mines.values()) {
+      if (mine.owner) mineCounts[mine.owner] += 1;
+    }
+
     this.options.onHud?.({
       credits: Math.floor(this.credits[this.localTeam]),
+      income:
+        INCOME_PER_SECOND + mineCounts[this.localTeam] * MINE_INCOME_PER_SECOND,
       baseHealth: Math.ceil(this.baseHealth[this.localTeam]),
       enemyBaseHealth: Math.ceil(this.baseHealth[this.remoteTeam]),
+      ownedMines: mineCounts[this.localTeam],
+      enemyMines: mineCounts[this.remoteTeam],
       selected,
       costs: Object.fromEntries(Object.entries(UNIT_TYPES).map(([key, value]) => [key, value.cost])),
     });
@@ -580,13 +736,18 @@ class BattleScene extends Phaser.Scene {
 
   createSnapshot(winner = null) {
     return {
-      version: 1,
+      version: 2,
       sentAt: Date.now(),
       credits: {
         host: Math.floor(this.credits.host),
         guest: Math.floor(this.credits.guest),
       },
       baseHealth: { ...this.baseHealth },
+      mines: [...this.mines.values()].map((mine) => ({
+        id: mine.id,
+        owner: mine.owner,
+        health: Math.max(0, Math.round(mine.health)),
+      })),
       units: [...this.units.values()].map((unit) => ({
         id: unit.id,
         team: unit.team,
@@ -607,9 +768,11 @@ class BattleScene extends Phaser.Scene {
 
   isValidSnapshot(snapshot) {
     return (
-      snapshot?.version === 1 &&
+      snapshot?.version === 2 &&
       snapshot.credits &&
       snapshot.baseHealth &&
+      Array.isArray(snapshot.mines) &&
+      snapshot.mines.length === MINE_DEFINITIONS.length &&
       Array.isArray(snapshot.units) &&
       snapshot.units.length <= MAX_UNITS_PER_TEAM * 2
     );
@@ -624,6 +787,13 @@ class BattleScene extends Phaser.Scene {
       host: Phaser.Math.Clamp(Number(snapshot.baseHealth.host) || 0, 0, this.baseMaxHealth),
       guest: Phaser.Math.Clamp(Number(snapshot.baseHealth.guest) || 0, 0, this.baseMaxHealth),
     };
+
+    for (const incoming of snapshot.mines) {
+      const mine = this.mines.get(incoming.id);
+      if (!mine) continue;
+      mine.owner = ["host", "guest"].includes(incoming.owner) ? incoming.owner : null;
+      mine.health = Phaser.Math.Clamp(Number(incoming.health) || 0, 0, mine.maxHealth);
+    }
 
     const nextIds = new Set();
     for (const incoming of snapshot.units) {

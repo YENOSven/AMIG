@@ -75,8 +75,12 @@ requires an Apple Developer ID certificate and notarization.
 - Buy Soldiers with `1`, Rangers with `2`, and Tanks with `3`.
 - Left click a troop to select it. Hold Shift to select multiple troops.
 - Press `A` to select your entire army.
-- Right click the battlefield to issue a formation move command.
+- Click empty ground after selecting troops to direct them there. Right click
+  also issues a formation move command.
 - Troops automatically attack enemies and bases in range.
+- Capture the top and bottom gold mines for `+12` credits per second each.
+- Mines reset to full health when captured and can be recaptured by attacking
+  them with troops.
 - Destroy the enemy base to win.
 
 Friend matches use the room host as the authoritative economy and combat
