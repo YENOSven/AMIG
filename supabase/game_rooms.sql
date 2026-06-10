@@ -147,3 +147,33 @@ with check (
       and expires_at > now()
   )
 );
+
+drop policy if exists "Room players receive presence" on realtime.messages;
+create policy "Room players receive presence"
+on realtime.messages for select
+to authenticated
+using (
+  extension = 'presence'
+  and exists (
+    select 1
+    from public.game_rooms
+    where ('match-' || id::text) = (select realtime.topic())
+      and (host_id = auth.uid() or guest_id = auth.uid())
+      and expires_at > now()
+  )
+);
+
+drop policy if exists "Room players send presence" on realtime.messages;
+create policy "Room players send presence"
+on realtime.messages for insert
+to authenticated
+with check (
+  extension = 'presence'
+  and exists (
+    select 1
+    from public.game_rooms
+    where ('match-' || id::text) = (select realtime.topic())
+      and (host_id = auth.uid() or guest_id = auth.uid())
+      and expires_at > now()
+  )
+);

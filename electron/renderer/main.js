@@ -14,6 +14,8 @@ let game = null;
 let roomChannel = null;
 let roomSubscription = null;
 let activeRoom = null;
+let roomCleanupPromise = Promise.resolve();
+let leavingRoom = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -82,15 +84,17 @@ function setButtonBusy(button, busy, busyLabel) {
 }
 
 async function clearRoomConnections() {
-  if (roomSubscription) {
-    await supabase.removeChannel(roomSubscription);
-    roomSubscription = null;
-  }
+  const subscription = roomSubscription;
+  const channel = roomChannel;
+  roomSubscription = null;
+  roomChannel = null;
 
-  if (roomChannel) {
-    await supabase.removeChannel(roomChannel);
-    roomChannel = null;
-  }
+  roomCleanupPromise = roomCleanupPromise.then(async () => {
+    if (subscription) await supabase.removeChannel(subscription);
+    if (channel) await supabase.removeChannel(channel);
+  });
+
+  return roomCleanupPromise;
 }
 
 function stopGame() {
@@ -429,6 +433,7 @@ async function joinRoom(event) {
 
 function renderRoomLobby(room, role) {
   stopGame();
+  leavingRoom = false;
   activeRoom = room;
   const isHost = role === "host";
   const opponentPresent = isHost ? Boolean(room.guest_id) : true;
@@ -494,9 +499,31 @@ async function launchFriendGame(room, role) {
   roomChannel = supabase.channel(`match-${room.id}`, {
     config: {
       broadcast: { self: false },
+      presence: { key: currentUser.id },
       private: true,
     },
   });
+
+  let hasSeenOpponent = false;
+  roomChannel
+    .on("presence", { event: "sync" }, () => {
+      const connectedIds = new Set(
+        Object.values(roomChannel.presenceState())
+          .flat()
+          .map((presence) => presence.userId)
+          .filter(Boolean)
+      );
+
+      const opponentConnected = [...connectedIds].some((id) => id !== currentUser.id);
+      if (opponentConnected) {
+        hasSeenOpponent = true;
+      } else if (hasSeenOpponent) {
+        leaveRoomAndReturn("Your friend disconnected from the match.", false);
+      }
+    })
+    .on("broadcast", { event: "peer-left" }, () => {
+      leaveRoomAndReturn("Your friend left the match.", false);
+    });
 
   try {
     await new Promise((resolve, reject) => {
@@ -512,6 +539,15 @@ async function launchFriendGame(room, role) {
         }
       });
     });
+
+    const presenceStatus = await roomChannel.track({
+      userId: currentUser.id,
+      joinedAt: new Date().toISOString(),
+    });
+
+    if (presenceStatus !== "ok") {
+      throw new Error("Could not announce room presence.");
+    }
   } catch (error) {
     await leaveRoomAndReturn(playerError(error, "Could not connect to the room. Please try again."));
     return;
@@ -537,7 +573,42 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
         </div>
         <button id="leave-match" class="secondary-button" type="button">Return to menu</button>
       </header>
-      <section id="game-canvas" class="game-canvas"></section>
+      <section class="battle-layout">
+        <aside class="battle-hud">
+          <div class="hud-stat">
+            <span>Credits</span>
+            <strong id="hud-credits">350</strong>
+          </div>
+          <div class="hud-health-grid">
+            <div class="hud-stat">
+              <span>Your base</span>
+              <strong id="hud-base">1200</strong>
+            </div>
+            <div class="hud-stat">
+              <span>Enemy base</span>
+              <strong id="hud-enemy-base">1200</strong>
+            </div>
+          </div>
+          <div class="troop-shop">
+            <p class="eyebrow">Recruit troops</p>
+            <button class="troop-button" data-unit-type="soldier" type="button">
+              <strong>Soldier</strong><span>100</span><small>Fast frontline unit · Key 1</small>
+            </button>
+            <button class="troop-button" data-unit-type="ranger" type="button">
+              <strong>Ranger</strong><span>160</span><small>Long-range damage · Key 2</small>
+            </button>
+            <button class="troop-button" data-unit-type="tank" type="button">
+              <strong>Tank</strong><span>280</span><small>Heavy and durable · Key 3</small>
+            </button>
+          </div>
+          <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
+          <p class="hud-help">
+            Select with left click. Hold Shift for multiple units. Right click to command them.
+          </p>
+          <p class="hud-selected"><span id="hud-selected">0</span> selected</p>
+        </aside>
+        <section id="game-canvas" class="game-canvas"></section>
+      </section>
     </main>
   `;
 
@@ -550,11 +621,12 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
   };
   document.querySelector("#leave-match").addEventListener("click", returnToMenu);
 
-  let remoteHandler = null;
+  let commandHandler = null;
+  let stateHandler = null;
   if (channel) {
-    channel.on("broadcast", { event: "player-state" }, ({ payload }) => {
-      remoteHandler?.(payload);
-    });
+    channel
+      .on("broadcast", { event: "match-command" }, ({ payload }) => commandHandler?.(payload))
+      .on("broadcast", { event: "match-state" }, ({ payload }) => stateHandler?.(payload));
   }
 
   game = createGame("game-canvas", {
@@ -562,32 +634,82 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
     role,
     roomCode,
     onExit: returnToMenu,
-    onRemoteState: (handler) => {
-      remoteHandler = handler;
+    onCommand: (handler) => {
+      commandHandler = handler;
+    },
+    onState: (handler) => {
+      stateHandler = handler;
+    },
+    sendCommand: (command) => {
+      if (!channel) return;
+      channel.send({
+        type: "broadcast",
+        event: "match-command",
+        payload: command,
+      });
     },
     sendState: (state) => {
-      channel?.send({
+      if (!channel) return;
+      channel.send({
         type: "broadcast",
-        event: "player-state",
+        event: "match-state",
         payload: state,
       });
     },
+    onHud: (hud) => {
+      const credits = document.querySelector("#hud-credits");
+      if (!credits) return;
+      credits.textContent = hud.credits;
+      document.querySelector("#hud-base").textContent = hud.baseHealth;
+      document.querySelector("#hud-enemy-base").textContent = hud.enemyBaseHealth;
+      document.querySelector("#hud-selected").textContent = hud.selected;
+      document.querySelectorAll("[data-unit-type]").forEach((button) => {
+        button.disabled = hud.credits < hud.costs[button.dataset.unitType];
+      });
+    },
+  });
+
+  document.querySelectorAll("[data-unit-type]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game?.events.emit("buy-unit", button.dataset.unitType);
+    });
+  });
+  document.querySelector("#select-all").addEventListener("click", () => {
+    game?.events.emit("select-all-units");
   });
 }
 
-async function leaveRoomAndReturn(notice = "") {
-  const room = activeRoom;
-  activeRoom = null;
-  stopGame();
+async function leaveRoomAndReturn(notice = "", notifyPeer = true) {
+  if (leavingRoom) return;
+  leavingRoom = true;
 
-  if (room?.id) {
-    const { error } = await supabase.rpc("leave_game_room", { room_id: room.id });
-    if (error && !notice) {
-      notice = playerError(error, "You left the room, but cleanup may take a moment.");
+  try {
+    const room = activeRoom;
+    const channel = roomChannel;
+    activeRoom = null;
+
+    if (channel && notifyPeer) {
+      await channel.send({
+        type: "broadcast",
+        event: "peer-left",
+        payload: { userId: currentUser?.id },
+      });
+      await channel.untrack();
     }
-  }
 
-  renderMenu(notice);
+    stopGame();
+
+    if (room?.id) {
+      const { error } = await supabase.rpc("leave_game_room", { room_id: room.id });
+      if (error && !notice) {
+        notice = playerError(error, "You left the room, but cleanup may take a moment.");
+      }
+    }
+
+    renderMenu(notice);
+  } finally {
+    leavingRoom = false;
+  }
 }
 
 async function start() {

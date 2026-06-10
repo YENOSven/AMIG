@@ -354,6 +354,99 @@ button:disabled {
   grid-template-rows: auto 1fr;
 }
 
+.battle-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+}
+
+.battle-hud {
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid #202b3d;
+  background: #0a101c;
+}
+
+.hud-stat {
+  display: grid;
+  gap: 3px;
+  padding: 13px;
+  border: 1px solid #26364d;
+  border-radius: 10px;
+  background: #101827;
+}
+
+.hud-stat span {
+  color: #91a0b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.hud-stat strong {
+  color: #58e6c2;
+  font-size: 1.5rem;
+}
+
+.hud-health-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.hud-health-grid .hud-stat strong {
+  font-size: 1.05rem;
+}
+
+.troop-shop {
+  display: grid;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.troop-button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  padding: 12px;
+  border: 1px solid #344158;
+  border-radius: 10px;
+  text-align: left;
+  color: #f8fafc;
+  background: #121b2a;
+}
+
+.troop-button:hover:not(:disabled) {
+  border-color: #58e6c2;
+}
+
+.troop-button span {
+  color: #58e6c2;
+  font-weight: 800;
+}
+
+.troop-button small {
+  grid-column: 1 / -1;
+  color: #91a0b8;
+}
+
+.hud-action {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.hud-help,
+.hud-selected {
+  color: #91a0b8;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.hud-selected {
+  color: #dbeafe;
+}
+
 .game-canvas {
   min-height: 0;
   display: grid;
@@ -390,5 +483,9 @@ code {
 
   .mode-card {
     min-height: 160px;
+  }
+
+  .battle-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
   }
 }

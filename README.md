@@ -65,8 +65,19 @@ requires an Apple Developer ID certificate and notarization.
 - Authenticated Phaser top-down arena shell
 - Sandboxed Electron window with Node integration disabled
 - Fullscreen main menu with bot matches and private friend rooms
-- Atomic room joining and authenticated Supabase Realtime movement
+- Atomic room joining and authenticated Supabase Realtime battles
+- Base-destruction matches with credits, troop purchasing, commands, combat,
+  bot strategy, and victory conditions
 
-Friend movement is synchronized through authenticated Realtime channels.
-Shooting, damage, scoring, and anti-cheat validation still need an authoritative
-match host/server.
+## Gameplay
+
+- Earn credits automatically throughout the match.
+- Buy Soldiers with `1`, Rangers with `2`, and Tanks with `3`.
+- Left click a troop to select it. Hold Shift to select multiple troops.
+- Press `A` to select your entire army.
+- Right click the battlefield to issue a formation move command.
+- Troops automatically attack enemies and bases in range.
+- Destroy the enemy base to win.
+
+Friend matches use the room host as the authoritative economy and combat
+simulation. Guests send commands and receive synchronized battle snapshots.
