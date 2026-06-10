@@ -16,6 +16,7 @@ let roomSubscription = null;
 let activeRoom = null;
 let roomCleanupPromise = Promise.resolve();
 let leavingRoom = false;
+let roomHeartbeatTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -45,6 +46,12 @@ function playerError(error, fallback = "Something went wrong. Please try again."
   if (message.includes("room is already full")) return "That room already has two players.";
   if (message.includes("cannot join your own room")) return "Use a different account to join your room.";
   if (message.includes("timed out")) return "The connection timed out. Please try again.";
+  if (message.includes("realtime authorization")) {
+    return "Room access was denied. Run the latest game_rooms.sql in Supabase.";
+  }
+  if (message.includes("realtime connection")) {
+    return "Could not reach the live match service. Check your connection and try again.";
+  }
   if (message.includes("failed to fetch") || message.includes("network")) {
     return "Cannot reach the game service. Check your internet connection.";
   }
@@ -88,6 +95,8 @@ async function clearRoomConnections() {
   const channel = roomChannel;
   roomSubscription = null;
   roomChannel = null;
+  clearInterval(roomHeartbeatTimer);
+  roomHeartbeatTimer = null;
 
   roomCleanupPromise = roomCleanupPromise.then(async () => {
     if (subscription) await supabase.removeChannel(subscription);
@@ -496,30 +505,32 @@ async function launchFriendGame(room, role) {
     roomSubscription = null;
   }
 
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError || !session?.access_token) {
+    await leaveRoomAndReturn("Your login session expired. Sign in again and retry.", false);
+    return;
+  }
+
+  await supabase.realtime.setAuth(session.access_token);
+
   roomChannel = supabase.channel(`match-${room.id}`, {
     config: {
       broadcast: { self: false },
-      presence: { key: currentUser.id },
       private: true,
     },
   });
 
   let hasSeenOpponent = false;
-  roomChannel
-    .on("presence", { event: "sync" }, () => {
-      const connectedIds = new Set(
-        Object.values(roomChannel.presenceState())
-          .flat()
-          .map((presence) => presence.userId)
-          .filter(Boolean)
-      );
+  let lastOpponentSignalAt = Date.now();
 
-      const opponentConnected = [...connectedIds].some((id) => id !== currentUser.id);
-      if (opponentConnected) {
-        hasSeenOpponent = true;
-      } else if (hasSeenOpponent) {
-        leaveRoomAndReturn("Your friend disconnected from the match.", false);
-      }
+  roomChannel
+    .on("broadcast", { event: "heartbeat" }, () => {
+      hasSeenOpponent = true;
+      lastOpponentSignalAt = Date.now();
     })
     .on("broadcast", { event: "peer-left" }, () => {
       leaveRoomAndReturn("Your friend left the match.", false);
@@ -533,21 +544,42 @@ async function launchFriendGame(room, role) {
         if (status === "SUBSCRIBED") {
           clearTimeout(timeout);
           resolve();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        } else if (status === "CHANNEL_ERROR") {
           clearTimeout(timeout);
-          reject(error || new Error("Could not connect to the room."));
+          const message = String(error?.message || "");
+          reject(
+            new Error(
+              /unauthor|policy|rls|private/i.test(message)
+                ? "Realtime authorization failed."
+                : "Realtime connection failed."
+            )
+          );
+        } else if (status === "TIMED_OUT") {
+          clearTimeout(timeout);
+          reject(new Error("Room connection timed out."));
         }
       });
     });
 
-    const presenceStatus = await roomChannel.track({
-      userId: currentUser.id,
-      joinedAt: new Date().toISOString(),
+    await roomChannel.send({
+      type: "broadcast",
+      event: "heartbeat",
+      payload: { userId: currentUser.id },
     });
 
-    if (presenceStatus !== "ok") {
-      throw new Error("Could not announce room presence.");
-    }
+    roomHeartbeatTimer = setInterval(() => {
+      if (!roomChannel) return;
+
+      roomChannel.send({
+        type: "broadcast",
+        event: "heartbeat",
+        payload: { userId: currentUser.id },
+      });
+
+      if (hasSeenOpponent && Date.now() - lastOpponentSignalAt > 6000) {
+        leaveRoomAndReturn("Your friend disconnected from the match.", false);
+      }
+    }, 1500);
   } catch (error) {
     await leaveRoomAndReturn(playerError(error, "Could not connect to the room. Please try again."));
     return;
@@ -592,13 +624,13 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
           <div class="troop-shop">
             <p class="eyebrow">Recruit troops</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
-              <strong>Soldier</strong><span>100</span><small>Fast frontline unit · Key 1</small>
+              <strong>Soldier</strong><span>100</span><small>Fast frontline unit - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
-              <strong>Ranger</strong><span>160</span><small>Long-range damage · Key 2</small>
+              <strong>Ranger</strong><span>160</span><small>Long-range damage - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
-              <strong>Tank</strong><span>280</span><small>Heavy and durable · Key 3</small>
+              <strong>Tank</strong><span>280</span><small>Heavy and durable - Key 3</small>
             </button>
           </div>
           <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
@@ -688,13 +720,12 @@ async function leaveRoomAndReturn(notice = "", notifyPeer = true) {
     const channel = roomChannel;
     activeRoom = null;
 
-    if (channel && notifyPeer) {
+  if (channel && notifyPeer) {
       await channel.send({
         type: "broadcast",
         event: "peer-left",
         payload: { userId: currentUser?.id },
       });
-      await channel.untrack();
     }
 
     stopGame();

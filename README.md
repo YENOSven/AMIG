@@ -7,7 +7,7 @@ Supabase Auth.
 
 1. Create a Supabase project.
 2. In the Supabase SQL Editor, run `supabase/profiles.sql`, then
-   `supabase/game_rooms.sql`.
+   `supabase/game_rooms.sql`. Re-run `game_rooms.sql` after app updates.
 3. In Supabase Realtime Settings, disable **Allow public access** so all match
    channels must pass the room authorization policies.
 4. Copy `.env.example` to `.env`.
