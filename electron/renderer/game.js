@@ -8,13 +8,13 @@ const GUEST_BASE_X = WORLD_WIDTH - 105;
 const STARTING_CREDITS = 350;
 const MAX_CREDITS = 9999;
 const INCOME_PER_SECOND = 22;
-const MINE_INCOME_PER_SECOND = 12;
-const MINE_MAX_HEALTH = 500;
+const MINE_INCOME_PER_SECOND = 8;
+const MINE_MAX_HEALTH = 600;
 const SNAPSHOT_INTERVAL = 100;
 const MAX_UNITS_PER_TEAM = 30;
 const MINE_DEFINITIONS = [
-  { id: "top", x: WORLD_WIDTH / 2, y: 165, label: "TOP MINE" },
-  { id: "bottom", x: WORLD_WIDTH / 2, y: WORLD_HEIGHT - 145, label: "BOTTOM MINE" },
+  { id: "top", x: WORLD_WIDTH / 2, y: BASE_Y - 200, label: "TOP MINE" },
+  { id: "bottom", x: WORLD_WIDTH / 2, y: BASE_Y + 200, label: "BOTTOM MINE" },
 ];
 
 const UNIT_TYPES = {
@@ -24,27 +24,27 @@ const UNIT_TYPES = {
     health: 140,
     damage: 14,
     range: 58,
-    speed: 88,
-    cooldown: 600,
+    speed: 84,
+    cooldown: 625,
     radius: 13,
   },
   ranger: {
     label: "Ranger",
     cost: 150,
-    health: 85,
-    damage: 25,
-    range: 190,
-    speed: 68,
+    health: 90,
+    damage: 22,
+    range: 180,
+    speed: 84,
     cooldown: 850,
     radius: 11,
   },
   tank: {
     label: "Tank",
     cost: 260,
-    health: 320,
-    damage: 34,
-    range: 72,
-    speed: 46,
+    health: 300,
+    damage: 30,
+    range: 70,
+    speed: 52,
     cooldown: 1100,
     radius: 18,
   },
@@ -93,6 +93,7 @@ class BattleScene extends Phaser.Scene {
     this.lastIncomeAt = 0;
     this.lastAiPurchaseAt = 0;
     this.lastAiCommandAt = 0;
+    this.aiPurchaseIndex = 0;
     this.finished = false;
     this.lastCommandMarker = null;
   }
@@ -482,6 +483,7 @@ class BattleScene extends Phaser.Scene {
 
   updateUnits(time, delta) {
     const deltaSeconds = Math.min(delta, 50) / 1000;
+    const attackIntents = [];
 
     for (const unit of [...this.units.values()]) {
       const definition = UNIT_TYPES[unit.type];
@@ -490,8 +492,12 @@ class BattleScene extends Phaser.Scene {
       if (target && target.distance <= definition.range) {
         if (time - unit.lastAttackAt >= definition.cooldown) {
           unit.lastAttackAt = time;
-          this.damageTarget(target, definition.damage, unit.team);
-          this.showAttackPulse(unit, target);
+          attackIntents.push({
+            unit,
+            target,
+            damage: definition.damage,
+            attackingTeam: unit.team,
+          });
         }
         continue;
       }
@@ -499,6 +505,8 @@ class BattleScene extends Phaser.Scene {
       const destination = unit.order || this.defaultDestination(unit);
       this.moveUnitToward(unit, destination.x, destination.y, definition.speed, deltaSeconds);
     }
+
+    this.resolveAttackIntents(attackIntents);
   }
 
   findCombatTarget(unit) {
@@ -556,27 +564,65 @@ class BattleScene extends Phaser.Scene {
     unit.y += ((y - unit.y) / distance) * step;
   }
 
-  damageTarget(target, damage, attackingTeam) {
-    if (target.kind === "unit") {
-      target.entity.health -= damage;
-      if (target.entity.health <= 0) {
-        this.units.delete(target.entity.id);
-        this.destroyUnitView(target.entity.id);
+  resolveAttackIntents(attackIntents) {
+    const unitDamage = new Map();
+    const baseDamage = { host: 0, guest: 0 };
+    const mineDamage = new Map();
+
+    for (const intent of attackIntents) {
+      const { target, damage, attackingTeam } = intent;
+      this.showAttackPulse(intent.unit, target);
+
+      if (target.kind === "unit") {
+        unitDamage.set(target.entity.id, (unitDamage.get(target.entity.id) || 0) + damage);
+      } else if (target.kind === "base") {
+        baseDamage[target.team] += damage;
+      } else if (target.kind === "mine") {
+        const damageByTeam = mineDamage.get(target.entity.id) || { host: 0, guest: 0 };
+        damageByTeam[attackingTeam] += damage;
+        mineDamage.set(target.entity.id, damageByTeam);
       }
-    } else if (target.kind === "base") {
-      this.baseHealth[target.team] = Math.max(0, this.baseHealth[target.team] - damage);
-    } else if (target.kind === "mine") {
-      target.entity.health -= damage;
-      if (target.entity.health <= 0) {
-        target.entity.owner = attackingTeam;
-        target.entity.health = target.entity.maxHealth;
-        for (const unit of this.units.values()) {
-          if (unit.order?.objectiveId === target.entity.id && unit.team === attackingTeam) {
-            unit.order = null;
-          }
+    }
+
+    for (const [id, damage] of unitDamage) {
+      const unit = this.units.get(id);
+      if (unit) unit.health -= damage;
+    }
+
+    for (const team of ["host", "guest"]) {
+      this.baseHealth[team] = Math.max(0, this.baseHealth[team] - baseDamage[team]);
+    }
+
+    for (const [id, damageByTeam] of mineDamage) {
+      const mine = this.mines.get(id);
+      if (!mine) continue;
+
+      mine.health -= damageByTeam.host + damageByTeam.guest;
+      if (mine.health > 0) continue;
+
+      if (damageByTeam.host === damageByTeam.guest) {
+        mine.health = 1;
+        continue;
+      }
+
+      const capturingTeam = damageByTeam.host > damageByTeam.guest ? "host" : "guest";
+      mine.owner = capturingTeam;
+      mine.health = mine.maxHealth;
+      for (const unit of this.units.values()) {
+        if (unit.order?.objectiveId === mine.id && unit.team === capturingTeam) {
+          unit.order = null;
         }
-        this.updateHud();
       }
+      this.updateHud();
+    }
+
+    for (const [id] of unitDamage) {
+      const unit = this.units.get(id);
+      if (!unit || unit.health > 0) continue;
+
+      // Unit kills never award credits; income only comes from time and controlled mines.
+      this.units.delete(id);
+      this.destroyUnitView(id);
     }
   }
 
@@ -595,10 +641,9 @@ class BattleScene extends Phaser.Scene {
 
   updateBotCommander(time) {
     if (time - this.lastAiPurchaseAt > 1300) {
-      const affordable = ["tank", "ranger", "soldier"].find(
-        (type) => this.credits.guest >= UNIT_TYPES[type].cost
-      );
-      if (affordable) this.buyUnit("guest", affordable);
+      const purchaseOrder = ["soldier", "soldier", "ranger", "soldier", "tank"];
+      const type = purchaseOrder[this.aiPurchaseIndex % purchaseOrder.length];
+      if (this.buyUnit("guest", type)) this.aiPurchaseIndex += 1;
       this.lastAiPurchaseAt = time;
     }
 

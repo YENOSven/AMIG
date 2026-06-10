@@ -629,13 +629,13 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
           <div class="troop-shop">
             <p class="eyebrow">Recruit troops</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
-              <strong>Soldier</strong><span>90</span><small>Fast, durable frontline - Key 1</small>
+              <strong>Soldier</strong><span>90</span><small>Balanced frontline fighter - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
-              <strong>Ranger</strong><span>150</span><small>Fragile long-range damage - Key 2</small>
+              <strong>Ranger</strong><span>150</span><small>Mobile long-range support - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
-              <strong>Tank</strong><span>260</span><small>Slow defensive powerhouse - Key 3</small>
+              <strong>Tank</strong><span>260</span><small>Heavy, slower frontline unit - Key 3</small>
             </button>
           </div>
           <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
