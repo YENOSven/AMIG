@@ -8,6 +8,7 @@ import {
 } from "./supabase.js";
 
 const app = document.querySelector("#app");
+const emailConfirmationUrl = "amig://auth/confirmed";
 let currentUser = null;
 let game = null;
 let roomChannel = null;
@@ -33,8 +34,11 @@ function playerError(error, fallback = "Something went wrong. Please try again."
 
   if (message.includes("invalid login credentials")) return "Incorrect email or password.";
   if (message.includes("email not confirmed")) return "Confirm your email before signing in.";
+  if (message.includes("code verifier")) return "This verification link must be opened on the device where you signed up.";
+  if (message.includes("otp_expired")) return "This verification link has expired. Create a new account or request another email.";
   if (message.includes("user already registered")) return "An account already exists for this email.";
   if (message.includes("password should be")) return "Your password does not meet the security requirements.";
+  if (message.includes("rate limit")) return "Too many emails were requested. Wait a minute and try again.";
   if (message.includes("room not found or expired")) return "That room does not exist or has expired.";
   if (message.includes("room is already full")) return "That room already has two players.";
   if (message.includes("cannot join your own room")) return "Use a different account to join your room.";
@@ -54,6 +58,10 @@ function playerError(error, fallback = "Something went wrong. Please try again."
 
 function noticeText(notice) {
   return typeof notice === "string" ? notice : notice?.text || "";
+}
+
+function isEmailNotConfirmed(error) {
+  return String(error?.message || "").toLowerCase().includes("email not confirmed");
 }
 
 function noticeType(notice) {
@@ -154,6 +162,11 @@ function renderAuth(mode = "login", notice = "") {
           }
           <button type="submit">${isSignup ? "Create account" : "Sign in"}</button>
         </form>
+        ${
+          isSignup
+            ? ""
+            : `<button id="resend-verification" class="text-button" type="button" hidden>Resend verification email</button>`
+        }
         <button id="switch-mode" class="text-button" type="button">
           ${isSignup ? "Already have an account? Sign in" : "Need an account? Sign up"}
         </button>
@@ -164,10 +177,36 @@ function renderAuth(mode = "login", notice = "") {
   const form = document.querySelector("#auth-form");
   const message = document.querySelector("#auth-message");
   const submitButton = form.querySelector('button[type="submit"]');
+  const resendButton = document.querySelector("#resend-verification");
   showNotice(message, notice);
 
   document.querySelector("#switch-mode").addEventListener("click", () => {
     renderAuth(isSignup ? "login" : "signup");
+  });
+
+  resendButton?.addEventListener("click", async () => {
+    const email = String(form.elements.email.value).trim().toLowerCase();
+
+    if (!form.elements.email.reportValidity()) return;
+
+    setButtonBusy(resendButton, true, "Sending...");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: emailConfirmationUrl },
+    });
+
+    if (error) {
+      showNotice(message, playerError(error, "Could not resend the verification email."));
+      setButtonBusy(resendButton, false);
+      return;
+    }
+
+    showNotice(message, {
+      type: "success",
+      text: "A new verification email was sent. Use the newest link.",
+    });
+    setButtonBusy(resendButton, false);
   });
 
   form.addEventListener("submit", async (event) => {
@@ -186,7 +225,10 @@ function renderAuth(mode = "login", notice = "") {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { display_name: displayNameValue } },
+          options: {
+            data: { display_name: displayNameValue },
+            emailRedirectTo: emailConfirmationUrl,
+          },
         });
         if (error) throw error;
         if (!data.session) {
@@ -202,10 +244,66 @@ function renderAuth(mode = "login", notice = "") {
       }
     } catch (error) {
       showNotice(message, playerError(error, "Could not complete authentication. Please try again."));
+      if (resendButton) resendButton.hidden = !isEmailNotConfirmed(error);
     } finally {
       setButtonBusy(submitButton, false);
     }
   });
+}
+
+async function handleEmailConfirmation(rawUrl) {
+  try {
+    const callbackUrl = new URL(rawUrl);
+    if (!["amig:", "icrackedsahil:"].includes(callbackUrl.protocol) || callbackUrl.hostname !== "auth") return;
+
+    const hashParams = new URLSearchParams(callbackUrl.hash.slice(1));
+    const callbackError =
+      callbackUrl.searchParams.get("error_description") ||
+      callbackUrl.searchParams.get("error") ||
+      hashParams.get("error_description") ||
+      hashParams.get("error");
+
+    if (callbackError) throw new Error(callbackError);
+
+    const code = callbackUrl.searchParams.get("code");
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+    } else {
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (error) throw error;
+      }
+    }
+
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) throw error;
+
+    if (user) {
+      currentUser = user;
+      renderMenu({
+        type: "success",
+        text: "Email verified. Your account is ready.",
+      });
+    } else {
+      renderAuth("login", {
+        type: "success",
+        text: "Email verified. You can sign in now.",
+      });
+    }
+  } catch (error) {
+    renderAuth("login", playerError(error, "Could not verify this email link. It may have expired."));
+  }
 }
 
 function renderMenu(notice = "") {
@@ -516,6 +614,8 @@ async function start() {
       }
     });
   });
+
+  window.desktopAuth?.onCallback(handleEmailConfirmation);
 }
 
 start().catch((error) => {

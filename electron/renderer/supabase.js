@@ -2,16 +2,19 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const keepSignedInKey = "icrackedsahil.keepSignedIn";
+const keepSignedInKey = "amig.keepSignedIn";
+const legacyKeepSignedInKey = "icrackedsahil.keepSignedIn";
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export function getKeepSignedIn() {
-  return localStorage.getItem(keepSignedInKey) !== "false";
+  const value = localStorage.getItem(keepSignedInKey) ?? localStorage.getItem(legacyKeepSignedInKey);
+  return value !== "false";
 }
 
 export function setKeepSignedIn(keepSignedIn) {
   localStorage.setItem(keepSignedInKey, String(Boolean(keepSignedIn)));
+  localStorage.removeItem(legacyKeepSignedInKey);
 }
 
 const sessionStoragePolicy = {
@@ -37,7 +40,8 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: false,
+        flowType: "pkce",
         persistSession: true,
         storage: sessionStoragePolicy,
       },

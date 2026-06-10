@@ -1,4 +1,4 @@
-# ICrackedSahil
+# AMIG
 
 Desktop top-down PvP game foundation using Electron, Phaser, Vite, and
 Supabase Auth.
@@ -12,7 +12,13 @@ Supabase Auth.
    channels must pass the room authorization policies.
 4. Copy `.env.example` to `.env`.
 5. Add the project URL and anon/publishable key to `.env`.
-6. Install and launch the desktop app:
+6. In Supabase **Authentication -> URL Configuration**, add this exact
+   redirect URL: `amig://auth/confirmed`.
+   Keep `icrackedsahil://auth/confirmed` temporarily if verification emails
+   were sent before the rename.
+7. In the **Confirm signup** email template, ensure the confirmation button
+   links to `{{ .ConfirmationURL }}`.
+8. Install and launch the desktop app:
 
 ```powershell
 npm install
@@ -46,7 +52,7 @@ Apple Silicon Macs.
    `SUPABASE_URL`.
 2. Add the Actions secret `SUPABASE_PUBLISHABLE_KEY`.
 3. Open **Actions -> Build macOS installer -> Run workflow**.
-4. Download the `ICrackedSahil-macOS` artifact when the workflow finishes.
+4. Download the `AMIG-macOS` artifact when the workflow finishes.
 
 The unsigned development DMG may trigger Gatekeeper. Public distribution
 requires an Apple Developer ID certificate and notarization.
