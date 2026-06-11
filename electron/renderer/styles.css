@@ -592,6 +592,74 @@ button:disabled {
   margin-top: 16px;
 }
 
+.automation-button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #344158;
+  border-radius: 10px;
+  text-align: left;
+  color: #dbeafe;
+  background: #101827;
+}
+
+.automation-button strong {
+  color: #91a0b8;
+}
+
+.automation-button small {
+  grid-column: 1 / -1;
+  color: #91a0b8;
+  line-height: 1.35;
+}
+
+.automation-button.is-active {
+  border-color: rgba(88, 230, 194, 0.65);
+  background: rgba(24, 67, 59, 0.5);
+}
+
+.automation-button.is-active strong {
+  color: #58e6c2;
+}
+
+.quick-command-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.quick-command-grid button {
+  display: grid;
+  gap: 2px;
+  padding: 9px;
+  border: 1px solid #344158;
+  border-radius: 9px;
+  color: #cbd5e1;
+  background: #101827;
+}
+
+.quick-command-grid button:last-child {
+  grid-column: 1 / -1;
+}
+
+.quick-command-grid button:hover {
+  border-color: #58e6c2;
+}
+
+.quick-command-grid strong {
+  color: #58e6c2;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.quick-command-grid span {
+  font-size: 0.78rem;
+}
+
 .hud-help,
 .hud-selected {
   color: #91a0b8;

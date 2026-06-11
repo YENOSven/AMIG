@@ -17,6 +17,7 @@ const INCOME_PER_SECOND = 14;
 const MINE_INCOME_PER_SECOND = 6;
 const MINE_MAX_HEALTH = 800;
 const SNAPSHOT_INTERVAL = 100;
+const AUTO_COMMAND_INTERVAL = 2400;
 const MAX_UNITS_PER_TEAM = 30;
 const MINE_DEFINITIONS = [
   { id: "top", x: WORLD_WIDTH / 2, y: BASE_Y - 275, label: "TOP MINE" },
@@ -26,32 +27,34 @@ const MINE_DEFINITIONS = [
 const UNIT_TYPES = {
   soldier: {
     label: "Soldier",
-    cost: 100,
-    health: 140,
-    damage: 14,
-    range: 58,
-    speed: 74,
+    cost: 95,
+    health: 150,
+    damage: 15,
+    range: 46,
+    speed: 78,
     cooldown: 700,
     radius: 13,
   },
   ranger: {
     label: "Ranger",
-    cost: 170,
-    health: 90,
-    damage: 22,
-    range: 180,
-    speed: 74,
-    cooldown: 950,
+    cost: 160,
+    health: 85,
+    damage: 24,
+    range: 210,
+    preferredRange: 165,
+    retreatRange: 105,
+    speed: 80,
+    cooldown: 1000,
     radius: 11,
   },
   tank: {
     label: "Tank",
-    cost: 280,
-    health: 480,
-    damage: 22,
-    range: 70,
-    speed: 46,
-    cooldown: 1250,
+    cost: 235,
+    health: 560,
+    damage: 20,
+    range: 54,
+    speed: 50,
+    cooldown: 1100,
     radius: 20,
   },
 };
@@ -98,7 +101,8 @@ class BattleScene extends Phaser.Scene {
     this.lastSnapshotAt = 0;
     this.lastIncomeAt = 0;
     this.lastAiPurchaseAt = 0;
-    this.lastAiCommandAt = 0;
+    this.lastAutoCommandAt = 0;
+    this.automation = { host: true, guest: true };
     this.processedRemoteCommandIds = new Set();
     this.finished = false;
     this.lastCommandMarker = null;
@@ -279,6 +283,13 @@ class BattleScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
     this.input.keyboard.on("keydown-ESC", () => this.options.onExit?.());
     this.input.keyboard.on("keydown-A", () => this.selectAllLocalUnits());
+    this.input.keyboard.on("keydown-T", () => this.toggleLocalAutomation());
+    this.input.keyboard.on("keydown-Q", () => this.commandAllLocalUnits("top"));
+    this.input.keyboard.on("keydown-E", () => this.commandAllLocalUnits("bottom"));
+    this.input.keyboard.on("keydown-SPACE", (event) => {
+      event.preventDefault();
+      this.commandAllLocalUnits("base");
+    });
     this.purchaseKeys = this.input.keyboard.addKeys({
       soldier: Phaser.Input.Keyboard.KeyCodes.ONE,
       ranger: Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -289,9 +300,13 @@ class BattleScene extends Phaser.Scene {
   registerGameEvents() {
     this.game.events.on("buy-unit", this.requestPurchase, this);
     this.game.events.on("select-all-units", this.selectAllLocalUnits, this);
+    this.game.events.on("toggle-automation", this.toggleLocalAutomation, this);
+    this.game.events.on("command-objective", this.commandAllLocalUnits, this);
     this.events.once("shutdown", () => {
       this.game.events.off("buy-unit", this.requestPurchase, this);
       this.game.events.off("select-all-units", this.selectAllLocalUnits, this);
+      this.game.events.off("toggle-automation", this.toggleLocalAutomation, this);
+      this.game.events.off("command-objective", this.commandAllLocalUnits, this);
     });
   }
 
@@ -332,6 +347,46 @@ class BattleScene extends Phaser.Scene {
     }
   }
 
+  toggleLocalAutomation() {
+    if (this.finished) return;
+    const enabled = !this.automation[this.localTeam];
+
+    if (this.isAuthority) {
+      this.applyCommand(this.localTeam, { action: "set-automation", enabled });
+    } else {
+      this.options.sendCommand?.({ action: "set-automation", enabled });
+    }
+  }
+
+  commandAllLocalUnits(objective) {
+    if (this.finished) return;
+    const unitIds = [...this.units.values()]
+      .filter((unit) => unit.team === this.localTeam)
+      .map((unit) => unit.id);
+    if (unitIds.length === 0) return;
+
+    const mine = this.mines.get(objective);
+    const target = mine || {
+      x: this.localTeam === "host" ? GUEST_BASE_X : HOST_BASE_X,
+      y: BASE_Y,
+    };
+    const command = {
+      action: "move",
+      unitIds,
+      x: target.x,
+      y: target.y,
+      objectiveId: mine?.id || null,
+      automatic: false,
+    };
+
+    this.showCommandMarker(target.x, target.y);
+    if (this.isAuthority) {
+      this.applyCommand(this.localTeam, command);
+    } else {
+      this.options.sendCommand?.(command);
+    }
+  }
+
   issueMoveCommand(x, y) {
     const unitIds = [...this.selectedIds];
     if (unitIds.length === 0) return;
@@ -346,6 +401,7 @@ class BattleScene extends Phaser.Scene {
       x: target.x,
       y: target.y,
       objectiveId: mine?.id || null,
+      automatic: false,
     };
 
     if (this.isAuthority) {
@@ -390,6 +446,13 @@ class BattleScene extends Phaser.Scene {
       return;
     }
 
+    if (command.action === "set-automation" && typeof command.enabled === "boolean") {
+      this.automation[team] = command.enabled;
+      this.updateHud();
+      this.broadcastSnapshot(true);
+      return;
+    }
+
     if (command.action === "move" && Array.isArray(command.unitIds)) {
       const target = clampPoint(command.x, command.y);
       if (!target) return;
@@ -398,18 +461,62 @@ class BattleScene extends Phaser.Scene {
       const ownedUnits = command.unitIds
         .slice(0, MAX_UNITS_PER_TEAM)
         .map((id) => this.units.get(String(id)))
-        .filter((unit) => unit?.team === team);
+        .filter((unit, index, units) => unit?.team === team && units.indexOf(unit) === index);
 
-      ownedUnits.forEach((unit, index) => {
-        const column = index % 4;
-        const row = Math.floor(index / 4);
-        const direction = team === "host" ? -1 : 1;
-        unit.order = {
-          x: Phaser.Math.Clamp((objective?.x ?? target.x) + direction * row * 24, 45, WORLD_WIDTH - 45),
-          y: Phaser.Math.Clamp((objective?.y ?? target.y) + (column - 1.5) * 26, 75, WORLD_HEIGHT - 45),
-          objectiveId: objective?.id || null,
-        };
-      });
+      const roleCounts = { tank: 0, soldier: 0, ranger: 0 };
+      const roleDepth = { tank: 0, soldier: 38, ranger: 112 };
+      const roleColumns = { tank: 3, soldier: 4, ranger: 4 };
+      const destinationX = objective?.x ?? target.x;
+      const destinationY = objective?.y ?? target.y;
+      const center = ownedUnits.reduce(
+        (total, unit) => ({ x: total.x + unit.x, y: total.y + unit.y }),
+        { x: 0, y: 0 }
+      );
+      center.x /= Math.max(1, ownedUnits.length);
+      center.y /= Math.max(1, ownedUnits.length);
+      const travelDistance = Phaser.Math.Distance.Between(
+        center.x,
+        center.y,
+        destinationX,
+        destinationY
+      );
+      const forwardX =
+        travelDistance > 1 ? (destinationX - center.x) / travelDistance : team === "host" ? 1 : -1;
+      const forwardY = travelDistance > 1 ? (destinationY - center.y) / travelDistance : 0;
+      const lateralX = -forwardY;
+      const lateralY = forwardX;
+
+      ownedUnits
+        .sort((left, right) => {
+          const priority = { tank: 0, soldier: 1, ranger: 2 };
+          return priority[left.type] - priority[right.type] || Number(left.id) - Number(right.id);
+        })
+        .forEach((unit) => {
+          const roleIndex = roleCounts[unit.type]++;
+          const columns = roleColumns[unit.type];
+          const column = roleIndex % columns;
+          const row = Math.floor(roleIndex / columns);
+          const lateralOffset =
+            (column - (columns - 1) / 2) * (unit.type === "tank" ? 34 : 27);
+          const depth = roleDepth[unit.type] + row * 30;
+          unit.order = {
+            x: Phaser.Math.Clamp(
+              destinationX - forwardX * depth + lateralX * lateralOffset,
+              45,
+              WORLD_WIDTH - 45
+            ),
+            y: Phaser.Math.Clamp(
+              destinationY - forwardY * depth + lateralY * lateralOffset,
+              75,
+              WORLD_HEIGHT - 45
+            ),
+            objectiveId: objective?.id || null,
+            automatic: Boolean(command.automatic),
+            strategy: command.strategy || null,
+            assignedAt: this.time.now,
+          };
+          unit.combatTargetId = null;
+        });
     }
   }
 
@@ -445,6 +552,7 @@ class BattleScene extends Phaser.Scene {
       order: null,
       lastAttackAt: 0,
       rotation: team === "host" ? Math.PI / 2 : -Math.PI / 2,
+      combatTargetId: null,
     };
 
     this.units.set(id, unit);
@@ -526,7 +634,8 @@ class BattleScene extends Phaser.Scene {
     if (this.isAuthority) {
       this.updateEconomy(time);
       this.updateUnits(time, delta);
-      if (this.options.mode === "bot") this.updateBotCommander(time);
+      this.updateStrategicCommanders(time);
+      if (this.options.mode === "bot") this.updateBotPurchasing(time);
       this.checkVictory();
 
       if (time - this.lastSnapshotAt >= SNAPSHOT_INTERVAL) {
@@ -564,14 +673,15 @@ class BattleScene extends Phaser.Scene {
   }
 
   updateUnits(time, delta) {
-    const deltaSeconds = Math.min(delta, 50) / 1000;
+    const deltaSeconds = Math.min(delta, 100) / 1000;
     const attackIntents = [];
 
     for (const unit of [...this.units.values()]) {
       const definition = UNIT_TYPES[unit.type];
       const target = this.findCombatTarget(unit);
+      const inAttackRange = target && target.distance <= definition.range;
 
-      if (target && target.distance <= definition.range) {
+      if (inAttackRange) {
         if (time - unit.lastAttackAt >= definition.cooldown) {
           unit.lastAttackAt = time;
           attackIntents.push({
@@ -581,11 +691,35 @@ class BattleScene extends Phaser.Scene {
             attackingTeam: unit.team,
           });
         }
-        continue;
       }
 
-      const destination = unit.order || this.defaultDestination(unit);
-      this.moveUnitToward(unit, destination.x, destination.y, definition.speed, deltaSeconds);
+      if (unit.type === "ranger" && target?.kind === "unit") {
+        const shouldEngage =
+          Boolean(unit.order?.objectiveId) || target.distance <= definition.range * 1.3;
+        if (target.distance < definition.retreatRange) {
+          this.moveUnitAwayFrom(unit, target.x, target.y, definition.speed, deltaSeconds);
+        } else if (shouldEngage && (!inAttackRange || target.distance > definition.preferredRange)) {
+          this.moveUnitToward(unit, target.x, target.y, definition.speed, deltaSeconds);
+        } else if (!inAttackRange) {
+          const destination = unit.order || this.defaultDestination(unit);
+          this.moveUnitToward(unit, destination.x, destination.y, definition.speed, deltaSeconds);
+        }
+      } else if (!inAttackRange) {
+        const destination =
+          target?.kind === "unit" && unit.order?.objectiveId
+            ? target
+            : unit.order || this.defaultDestination(unit);
+        this.moveUnitToward(unit, destination.x, destination.y, definition.speed, deltaSeconds);
+      }
+
+      if (
+        unit.order &&
+        !unit.order.automatic &&
+        !unit.order.objectiveId &&
+        Phaser.Math.Distance.Between(unit.x, unit.y, unit.order.x, unit.order.y) < 6
+      ) {
+        unit.order = null;
+      }
     }
 
     this.resolveAttackIntents(attackIntents);
@@ -596,6 +730,61 @@ class BattleScene extends Phaser.Scene {
     const orderedMine = unit.order?.objectiveId ? this.mines.get(unit.order.objectiveId) : null;
 
     if (orderedMine) {
+      const lockedContestant = unit.combatTargetId
+        ? this.units.get(unit.combatTargetId)
+        : null;
+      if (
+        lockedContestant?.team === enemyTeam &&
+        Phaser.Math.Distance.Between(
+          lockedContestant.x,
+          lockedContestant.y,
+          orderedMine.x,
+          orderedMine.y
+        ) <= 300
+      ) {
+        return {
+          kind: "unit",
+          entity: lockedContestant,
+          x: lockedContestant.x,
+          y: lockedContestant.y,
+          distance: Phaser.Math.Distance.Between(
+            unit.x,
+            unit.y,
+            lockedContestant.x,
+            lockedContestant.y
+          ),
+        };
+      }
+
+      unit.combatTargetId = null;
+      let closestContestant = null;
+      for (const enemy of this.units.values()) {
+        if (enemy.team !== enemyTeam) continue;
+        const enemyMineDistance = Phaser.Math.Distance.Between(
+          enemy.x,
+          enemy.y,
+          orderedMine.x,
+          orderedMine.y
+        );
+        if (enemyMineDistance > 275) continue;
+
+        const unitDistance = Phaser.Math.Distance.Between(unit.x, unit.y, enemy.x, enemy.y);
+        if (!closestContestant || unitDistance < closestContestant.distance) {
+          closestContestant = {
+            kind: "unit",
+            entity: enemy,
+            x: enemy.x,
+            y: enemy.y,
+            distance: unitDistance,
+          };
+        }
+      }
+
+      if (closestContestant) {
+        unit.combatTargetId = closestContestant.entity.id;
+        return closestContestant;
+      }
+
       if (orderedMine.owner === unit.team) {
         unit.order = null;
       } else {
@@ -612,6 +801,7 @@ class BattleScene extends Phaser.Scene {
       }
     }
 
+    unit.combatTargetId = null;
     let closest = null;
 
     for (const enemy of this.units.values()) {
@@ -639,12 +829,24 @@ class BattleScene extends Phaser.Scene {
   }
 
   moveUnitToward(unit, x, y, speed, deltaSeconds) {
+    if (speed <= 0) return;
     const distance = Phaser.Math.Distance.Between(unit.x, unit.y, x, y);
     if (distance < 5) return;
     const step = Math.min(distance, speed * deltaSeconds);
     unit.rotation = Math.atan2(y - unit.y, x - unit.x) + Math.PI / 2;
     unit.x += ((x - unit.x) / distance) * step;
     unit.y += ((y - unit.y) / distance) * step;
+  }
+
+  moveUnitAwayFrom(unit, x, y, speed, deltaSeconds) {
+    const distance = Phaser.Math.Distance.Between(unit.x, unit.y, x, y);
+    if (distance < 0.1) return;
+    const step = speed * deltaSeconds;
+    const nextX = unit.x + ((unit.x - x) / distance) * step;
+    const nextY = unit.y + ((unit.y - y) / distance) * step;
+    unit.rotation = Math.atan2(y - unit.y, x - unit.x) + Math.PI / 2;
+    unit.x = Phaser.Math.Clamp(nextX, 45, WORLD_WIDTH - 45);
+    unit.y = Phaser.Math.Clamp(nextY, 75, WORLD_HEIGHT - 45);
   }
 
   resolveAttackIntents(attackIntents) {
@@ -776,16 +978,14 @@ class BattleScene extends Phaser.Scene {
     });
 
     const total = Math.max(1, botUnits.length);
-    const enemiesNearBase = enemyUnits.filter((unit) => unit.x > GUEST_BASE_X - 430);
 
-    if (enemiesNearBase.length >= 2 && counts.tank < Math.ceil(total * 0.3)) return "tank";
     if (enemyCounts.tank > counts.ranger && counts.ranger < Math.ceil(total * 0.35)) return "ranger";
     if (counts.tank < Math.floor(total / 5)) return "tank";
     if (counts.ranger < Math.floor(total / 3)) return "ranger";
     return "soldier";
   }
 
-  commandBotGroup(units, x, y, objectiveId = null) {
+  commandTeamGroup(team, units, x, y, objectiveId = null, strategy = null) {
     if (units.length === 0) return;
 
     const formationPriority = { tank: 0, soldier: 1, ranger: 2 };
@@ -797,12 +997,14 @@ class BattleScene extends Phaser.Scene {
       )
       .map((unit) => unit.id);
 
-    this.applyCommand("guest", {
+    this.applyCommand(team, {
       action: "move",
       unitIds,
       x,
       y,
       objectiveId,
+      automatic: true,
+      strategy,
     });
   }
 
@@ -825,39 +1027,42 @@ class BattleScene extends Phaser.Scene {
     return selected;
   }
 
-  commandBotArmy(botUnits, enemyUnits) {
-    const available = new Set(botUnits);
-    const threats = enemyUnits.filter((unit) => unit.x > GUEST_BASE_X - 430);
+  commandTeamArmy(team, teamUnits, enemyUnits, time) {
+    const enemyTeam = team === "host" ? "guest" : "host";
+    const enemyBaseX = team === "host" ? GUEST_BASE_X : HOST_BASE_X;
+    const direction = team === "host" ? 1 : -1;
+    const available = new Set(
+      teamUnits.filter((unit) => {
+        const order = unit.order;
+        if (!order) return true;
+        if (!order.automatic) return false;
 
-    if (threats.length > 0) {
-      const threatStrength = this.armyStrength(threats);
-      const defenders = this.takeBotUnitsByStrength(
-        available,
-        threatStrength * 1.15,
-        (unit) => (unit.type === "tank" ? 3 : unit.type === "soldier" ? 2 : 1)
-      );
-      const threatCenter = threats.reduce(
-        (center, unit) => ({ x: center.x + unit.x, y: center.y + unit.y }),
-        { x: 0, y: 0 }
-      );
-      this.commandBotGroup(
-        defenders,
-        Math.min(GUEST_BASE_X - 90, threatCenter.x / threats.length + 55),
-        threatCenter.y / threats.length
-      );
-    }
+        if (order.objectiveId) {
+          const mine = this.mines.get(order.objectiveId);
+          if (!mine) return true;
+          const hasContestant = enemyUnits.some(
+            (enemy) => Phaser.Math.Distance.Between(enemy.x, enemy.y, mine.x, mine.y) <= 300
+          );
+          return mine.owner === team && !hasContestant;
+        }
+
+        if (order.strategy === "attack") return false;
+        if (order.strategy === "stage" && time - (order.assignedAt || 0) < 8000) return false;
+        return true;
+      })
+    );
 
     const minePlans = [...this.mines.values()]
       .map((mine) => {
         const nearbyEnemies = enemyUnits.filter(
           (unit) => Phaser.Math.Distance.Between(unit.x, unit.y, mine.x, mine.y) < 260
         );
-        const nearbyAllies = botUnits.filter(
+        const nearbyAllies = teamUnits.filter(
           (unit) => Phaser.Math.Distance.Between(unit.x, unit.y, mine.x, mine.y) < 260
         );
         const enemyStrength = this.armyStrength(nearbyEnemies);
         const allyStrength = this.armyStrength(nearbyAllies);
-        const ownershipPriority = mine.owner === "host" ? 3 : mine.owner === null ? 2 : 1;
+        const ownershipPriority = mine.owner === enemyTeam ? 3 : mine.owner === null ? 2 : 1;
 
         return {
           mine,
@@ -871,9 +1076,9 @@ class BattleScene extends Phaser.Scene {
     for (const plan of minePlans) {
       if (available.size === 0) break;
 
-      const mineThreatened = plan.mine.owner === "guest" && plan.enemyStrength > 0;
+      const mineThreatened = plan.mine.owner === team && plan.enemyStrength > 0;
       const shouldContest =
-        plan.mine.owner !== "guest" &&
+        plan.mine.owner !== team &&
         (plan.enemyStrength === 0 || this.armyStrength([...available]) > plan.enemyStrength * 1.2);
       if (!mineThreatened && !shouldContest) continue;
 
@@ -886,9 +1091,16 @@ class BattleScene extends Phaser.Scene {
         requiredStrength,
         (unit) => (unit.type === "tank" ? 2 : unit.type === "ranger" ? 1 : 0)
       );
-      this.commandBotGroup(squad, plan.mine.x, plan.mine.y, plan.mine.id);
+      this.commandTeamGroup(
+        team,
+        squad,
+        plan.mine.x,
+        plan.mine.y,
+        plan.mine.id,
+        `objective:${plan.mine.id}`
+      );
 
-      // Keep enough troops together to pressure or defend instead of splitting into tiny groups.
+      // Keep enough troops together to contest effectively instead of splitting into tiny groups.
       if (available.size < 3) break;
     }
 
@@ -897,24 +1109,37 @@ class BattleScene extends Phaser.Scene {
 
     const remainingStrength = this.armyStrength(remaining);
     const enemyStrength = this.armyStrength(enemyUnits);
-    const ownsMine = [...this.mines.values()].some((mine) => mine.owner === "guest");
     const shouldAttack =
       remaining.length >= 4 &&
-      (remainingStrength >= enemyStrength * 0.85 || this.baseHealth.host < this.baseMaxHealth * 0.45);
+      (remainingStrength >= enemyStrength * 0.85 ||
+        this.baseHealth[enemyTeam] < this.baseMaxHealth * 0.45);
 
     if (shouldAttack) {
       const enemyLaneY =
         enemyUnits.length > 0
           ? enemyUnits.reduce((total, unit) => total + unit.y, 0) / enemyUnits.length
           : BASE_Y;
-      this.commandBotGroup(remaining, HOST_BASE_X + 95, enemyLaneY);
+      this.commandTeamGroup(
+        team,
+        remaining,
+        enemyBaseX - direction * 95,
+        enemyLaneY,
+        null,
+        "attack"
+      );
     } else {
-      const rallyX = ownsMine ? WORLD_WIDTH * 0.62 : GUEST_BASE_X - 260;
-      this.commandBotGroup(remaining, rallyX, BASE_Y);
+      this.commandTeamGroup(
+        team,
+        remaining,
+        WORLD_WIDTH / 2 - direction * 110,
+        BASE_Y,
+        null,
+        "stage"
+      );
     }
   }
 
-  updateBotCommander(time) {
+  updateBotPurchasing(time) {
     if (time - this.lastAiPurchaseAt > 1900) {
       const botUnits = [...this.units.values()].filter((unit) => unit.team === "guest");
       const enemyUnits = [...this.units.values()].filter((unit) => unit.team === "host");
@@ -922,13 +1147,19 @@ class BattleScene extends Phaser.Scene {
       this.buyUnit("guest", preferredType);
       this.lastAiPurchaseAt = time;
     }
+  }
 
-    if (time - this.lastAiCommandAt > 2200) {
-      const botUnits = [...this.units.values()].filter((unit) => unit.team === "guest");
-      const enemyUnits = [...this.units.values()].filter((unit) => unit.team === "host");
-      this.commandBotArmy(botUnits, enemyUnits);
-      this.lastAiCommandAt = time;
+  updateStrategicCommanders(time) {
+    if (time - this.lastAutoCommandAt < AUTO_COMMAND_INTERVAL) return;
+
+    for (const team of ["host", "guest"]) {
+      if (!this.automation[team]) continue;
+      const teamUnits = [...this.units.values()].filter((unit) => unit.team === team);
+      const enemyUnits = [...this.units.values()].filter((unit) => unit.team !== team);
+      this.commandTeamArmy(team, teamUnits, enemyUnits, time);
     }
+
+    this.lastAutoCommandAt = time;
   }
 
   checkVictory() {
@@ -1044,6 +1275,7 @@ class BattleScene extends Phaser.Scene {
       ownedMines: mineCounts[this.localTeam],
       enemyMines: mineCounts[this.remoteTeam],
       selected,
+      automationEnabled: this.automation[this.localTeam],
       costs: Object.fromEntries(Object.entries(UNIT_TYPES).map(([key, value]) => [key, value.cost])),
     });
   }
@@ -1057,6 +1289,7 @@ class BattleScene extends Phaser.Scene {
         guest: Math.floor(this.credits.guest),
       },
       baseHealth: { ...this.baseHealth },
+      automation: { ...this.automation },
       mines: [...this.mines.values()].map((mine) => ({
         id: mine.id,
         owner: mine.owner,
@@ -1086,6 +1319,7 @@ class BattleScene extends Phaser.Scene {
       snapshot?.version === 2 &&
       snapshot.credits &&
       snapshot.baseHealth &&
+      snapshot.automation &&
       Array.isArray(snapshot.mines) &&
       snapshot.mines.length === MINE_DEFINITIONS.length &&
       Array.isArray(snapshot.units) &&
@@ -1101,6 +1335,10 @@ class BattleScene extends Phaser.Scene {
     this.baseHealth = {
       host: Phaser.Math.Clamp(Number(snapshot.baseHealth.host) || 0, 0, this.baseMaxHealth),
       guest: Phaser.Math.Clamp(Number(snapshot.baseHealth.guest) || 0, 0, this.baseMaxHealth),
+    };
+    this.automation = {
+      host: snapshot.automation.host !== false,
+      guest: snapshot.automation.guest !== false,
     };
 
     for (const incoming of snapshot.mines) {
@@ -1127,6 +1365,7 @@ class BattleScene extends Phaser.Scene {
         order: null,
         lastAttackAt: 0,
         rotation: Number(incoming.rotation) || 0,
+        combatTargetId: null,
       };
 
       if (existing) {

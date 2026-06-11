@@ -4,3 +4,7 @@ release/
 .env
 .env.local
 *.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db

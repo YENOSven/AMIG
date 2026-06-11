@@ -36,11 +36,16 @@ Launch with desktop development tools and hot reload:
 npm run dev
 ```
 
-Create a Windows installer in `release/`:
+Create a production Windows installer and ZIP in `release/`:
 
 ```powershell
-npm run package
+npm run release:windows
 ```
+
+The release folder is cleaned first and ends with:
+
+- `AMIG Setup 1.0.0.exe`
+- `AMIG Setup 1.0.0.zip` containing that installer
 
 ## macOS Installer
 
@@ -73,10 +78,17 @@ requires an Apple Developer ID certificate and notarization.
 
 - Earn credits automatically throughout the match.
 - Buy Soldiers with `1`, Rangers with `2`, and Tanks with `3`.
+- Tanks lead mixed formations and absorb contact, Soldiers close aggressively,
+  and Rangers maintain distance and retreat from nearby enemies.
 - Left click a troop to select it. Hold Shift to select multiple troops.
 - Press `A` to select your entire army.
+- Toggle Objective AI with `T`. Both sides use the same mine-contesting and
+  forward-attack logic. Base defense remains under player control.
+- Send every troop to the top mine with `Q`, the bottom mine with `E`, or the
+  enemy base with `Space`.
 - Click empty ground after selecting troops to direct them there. Right click
-  also issues a formation move command.
+  also issues a formation move command. Manual orders remain active until the
+  destination is reached or the objective is completed.
 - Troops automatically attack enemies and bases in range.
 - Capture the top and bottom gold mines for `+6` credits per second each.
 - Mines reset to full health when captured and can be recaptured by attacking

@@ -8,8 +8,12 @@
   "scripts": {
     "start": "vite build && electron .",
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .\"",
-    "package": "npm run package:windows",
-    "package:windows": "vite build && electron-builder --win",
+    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1",
+    "validate": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer/main.js && node --check electron/renderer/game.js && node --check electron/renderer/supabase.js && vite build",
+    "package": "npm run release:windows",
+    "package:windows": "npm run clean && npm run validate && electron-builder --win",
+    "release:zip": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/finalize-windows-release.ps1",
+    "release:windows": "npm run package:windows && npm run release:zip",
     "package:mac": "vite build && electron-builder --mac dmg --universal"
   },
   "repository": {
@@ -22,6 +26,8 @@
   "build": {
     "appId": "com.amig.game",
     "productName": "AMIG",
+    "asar": true,
+    "compression": "maximum",
     "protocols": [
       {
         "name": "AMIG authentication",
@@ -38,6 +44,7 @@
       "dist/renderer/**/*",
       "electron/**/*",
       "!electron/renderer/**/*",
+      "!electron/**/*.map",
       "package.json"
     ],
     "win": {

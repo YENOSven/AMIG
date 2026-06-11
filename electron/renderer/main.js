@@ -711,21 +711,31 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
             <p class="eyebrow">Recruit troops</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
               <img src="${UNIT_ART.soldier}" alt="" />
-              <strong>Soldier</strong><span>100</span><small>Balanced frontline fighter - Key 1</small>
+              <strong>Soldier</strong><span>95</span><small>Aggressive close-range fighter - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
               <img src="${UNIT_ART.ranger}" alt="" />
-              <strong>Ranger</strong><span>170</span><small>Mobile long-range support - Key 2</small>
+              <strong>Ranger</strong><span>160</span><small>Keeps distance behind the frontline - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
               <img src="${UNIT_ART.tank}" alt="" />
-              <strong>Tank</strong><span>280</span><small>Low damage, extremely durable frontline - Key 3</small>
+              <strong>Tank</strong><span>235</span><small>Leads formations and absorbs damage - Key 3</small>
             </button>
+          </div>
+          <button id="toggle-automation" class="automation-button is-active" type="button">
+            <span>Objective AI</span>
+            <strong id="automation-status">ON</strong>
+            <small>Troops contest mines and push forward automatically - Key T</small>
+          </button>
+          <div class="quick-command-grid">
+            <button data-objective="top" type="button"><strong>Q</strong><span>Top mine</span></button>
+            <button data-objective="bottom" type="button"><strong>E</strong><span>Bottom mine</span></button>
+            <button data-objective="base" type="button"><strong>Space</strong><span>Enemy base</span></button>
           </div>
           <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
           <p class="hud-help">
-            Click a troop to select it, then click the ground to direct it. Hold Shift for groups.
-            Click a gold mine to attack and capture it for bonus income.
+            Objective AI handles forward movement. Base defense remains under your control.
+            Manual orders stay active until reached; hold Shift to select groups.
           </p>
           <p class="hud-selected"><span id="hud-selected">0</span> selected</p>
         </aside>
@@ -804,6 +814,12 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
       document.querySelector("#hud-mines").textContent = hud.ownedMines;
       document.querySelector("#hud-enemy-mines").textContent = hud.enemyMines;
       document.querySelector("#hud-selected").textContent = hud.selected;
+      const automationButton = document.querySelector("#toggle-automation");
+      const automationStatus = document.querySelector("#automation-status");
+      if (automationButton && automationStatus) {
+        automationButton.classList.toggle("is-active", hud.automationEnabled);
+        automationStatus.textContent = hud.automationEnabled ? "ON" : "OFF";
+      }
       document.querySelectorAll("[data-unit-type]").forEach((button) => {
         button.disabled = hud.credits < hud.costs[button.dataset.unitType];
       });
@@ -817,6 +833,14 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
   });
   document.querySelector("#select-all").addEventListener("click", () => {
     game?.events.emit("select-all-units");
+  });
+  document.querySelector("#toggle-automation").addEventListener("click", () => {
+    game?.events.emit("toggle-automation");
+  });
+  document.querySelectorAll("[data-objective]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game?.events.emit("command-objective", button.dataset.objective);
+    });
   });
 }
 
