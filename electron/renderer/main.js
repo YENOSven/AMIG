@@ -13,6 +13,8 @@ const UNIT_ART = {
   soldier: new URL("./assets/generated/soldier.png", import.meta.url).href,
   ranger: new URL("./assets/generated/ranger.png", import.meta.url).href,
   tank: new URL("./assets/generated/tank.png", import.meta.url).href,
+  medic: new URL("./assets/generated/soldier.png", import.meta.url).href,
+  artillery: new URL("./assets/generated/tank.png", import.meta.url).href,
 };
 let currentUser = null;
 let game = null;
@@ -193,7 +195,7 @@ function renderAuth(mode = "login", notice = "") {
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>
             Password
-            <input name="password" type="password" minlength="8" autocomplete="${isSignup ? "new-password" : "current-password"}" required />
+            <input name="password" type="password" ${isSignup ? 'minlength="8"' : ""} autocomplete="${isSignup ? "new-password" : "current-password"}" required />
           </label>
           ${
             isSignup
@@ -395,6 +397,11 @@ function renderMenu(notice = "") {
             <strong>Join a friend</strong>
             <small>Enter their room code.</small>
           </button>
+          <button id="show-keybinds" class="mode-card" type="button">
+            <span class="mode-number">04</span>
+            <strong>Keybinds</strong>
+            <small>View every keyboard command.</small>
+          </button>
         </div>
 
         <form id="join-form" class="join-form" hidden>
@@ -421,6 +428,7 @@ function renderMenu(notice = "") {
   });
   document.querySelector("#play-bot").addEventListener("click", () => launchGame({ mode: "bot" }));
   document.querySelector("#create-room").addEventListener("click", createRoom);
+  document.querySelector("#show-keybinds").addEventListener("click", renderKeybinds);
 
   const joinForm = document.querySelector("#join-form");
   document.querySelector("#show-join").addEventListener("click", () => {
@@ -428,6 +436,66 @@ function renderMenu(notice = "") {
     joinForm.roomCode.focus();
   });
   joinForm.addEventListener("submit", joinRoom);
+}
+
+function renderKeybinds() {
+  stopGame();
+  const groups = [
+    ["Army", [["A", "Select entire army"], ["Tab / Shift+Tab", "Cycle individual units"], ["F", "Select frontline"], ["R", "Select support"], ["H", "Guard current position"], ["G", "Return selected troops to AI"]]],
+    ["Orders", [["Q / E", "Cycle gold-mine destinations"], ["B", "Attack enemy base"], ["Space", "Move to camera center"], ["C", "Focus camera on selected squad"], ["Left / Right click", "Select troops or issue a terrain order"]]],
+    ["Tactics", [["Z", "Surge: move and attack faster, but take more damage"], ["X", "Brace: reduce damage, but move and attack slower"], ["V", "Focus Fire on the enemy nearest camera center"], ["14 seconds", "Per-unit tactical cooldown"]]],
+    ["Camera", [["Arrow keys", "Move across the battlefield"], ["Screen edge", "Edge-scroll the map"]]],
+    ["Recruit", [["1", "Recruit Soldier"], ["2", "Recruit Ranger"], ["3", "Recruit Tank"], ["4", "Recruit Medic"], ["5", "Recruit Artillery"]]],
+    ["Match", [["Enter", "Play again after a match"], ["Esc", "Return to the menu"]]],
+  ];
+
+  app.innerHTML = `
+    <main class="menu-shell keybinds-shell">
+      <header class="menu-header">
+        <div class="header-identity">
+          <span class="brand-mark brand-mark--small">A</span>
+          <div><p class="eyebrow">AMIG field manual</p><strong>Keyboard controls</strong></div>
+        </div>
+        <button id="back-to-menu" class="secondary-button" type="button">Back to menu (Esc)</button>
+      </header>
+      <section class="menu-content keybinds-content">
+        <div class="menu-title">
+          <p class="eyebrow">Command without a mouse</p>
+          <h1>Know every key.</h1>
+          <p class="menu-subtitle">The autonomous commander handles the war. These controls let you intervene instantly.</p>
+        </div>
+        <div class="keybind-grid">
+          ${groups
+            .map(
+              ([title, bindings]) => `
+                <section class="keybind-card">
+                  <h2>${title}</h2>
+                  ${bindings
+                    .map(
+                      ([key, description]) =>
+                        `<div class="keybind-row"><kbd>${key}</kbd><span>${description}</span></div>`
+                    )
+                    .join("")}
+                </section>
+              `
+            )
+            .join("")}
+        </div>
+      </section>
+    </main>
+  `;
+
+  const handleEscape = (event) => {
+    if (event.key !== "Escape") return;
+    window.removeEventListener("keydown", handleEscape);
+    renderMenu();
+  };
+  const goBack = () => {
+    window.removeEventListener("keydown", handleEscape);
+    renderMenu();
+  };
+  document.querySelector("#back-to-menu").addEventListener("click", goBack);
+  window.addEventListener("keydown", handleEscape);
 }
 
 function createRoomCode() {
@@ -687,59 +755,81 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
         <button id="leave-match" class="secondary-button" type="button">Return to menu</button>
       </header>
       <section class="battle-layout">
+        <section id="game-canvas" class="game-canvas"></section>
         <aside class="battle-hud">
-          <div class="hud-stat">
-            <span>Credits</span>
-            <strong id="hud-credits">300</strong>
-            <small><span id="hud-income">14</span> / sec</small>
-          </div>
-          <div class="hud-health-grid">
-            <div class="hud-stat">
-              <span>Your base</span>
-              <strong id="hud-base">1600</strong>
-            </div>
-            <div class="hud-stat">
-              <span>Enemy base</span>
-              <strong id="hud-enemy-base">1600</strong>
-            </div>
-          </div>
-          <div class="mine-status">
-            <div><span>Your mines</span><strong id="hud-mines">0</strong></div>
-            <div><span>Enemy mines</span><strong id="hud-enemy-mines">0</strong></div>
-          </div>
-          <div class="troop-shop">
-            <p class="eyebrow">Recruit troops</p>
+          <div class="troop-shop unit-hotbar">
+            <p class="eyebrow">Unit hotbar</p>
             <button class="troop-button" data-unit-type="soldier" type="button">
               <img src="${UNIT_ART.soldier}" alt="" />
-              <strong>Soldier</strong><span>95</span><small>Aggressive close-range fighter - Key 1</small>
+              <strong>Soldier</strong><span>100</span><small>Fast disruptor; weak into supported Tanks - Key 1</small>
             </button>
             <button class="troop-button" data-unit-type="ranger" type="button">
               <img src="${UNIT_ART.ranger}" alt="" />
-              <strong>Ranger</strong><span>160</span><small>Keeps distance behind the frontline - Key 2</small>
+              <strong>Ranger</strong><span>155</span><small>Armor piercing; vulnerable when caught - Key 2</small>
             </button>
             <button class="troop-button" data-unit-type="tank" type="button">
               <img src="${UNIT_ART.tank}" alt="" />
-              <strong>Tank</strong><span>235</span><small>Leads formations and absorbs damage - Key 3</small>
+              <strong>Tank</strong><span>240</span><small>Supported frontline armor; low damage alone - Key 3</small>
+            </button>
+            <button class="troop-button troop-button--medic" data-unit-type="medic" type="button">
+              <img src="${UNIT_ART.medic}" alt="" />
+              <strong>Medic</strong><span>165</span><small>Squad healing; defenseless without escorts - Key 4</small>
+            </button>
+            <button class="troop-button troop-button--artillery" data-unit-type="artillery" type="button">
+              <img src="${UNIT_ART.artillery}" alt="" />
+              <strong>Artillery</strong><span>270</span><small>Spotted area fire; fragile inside minimum range - Key 5</small>
             </button>
           </div>
-          <button id="toggle-automation" class="automation-button is-active" type="button">
-            <span>Objective AI</span>
-            <strong id="automation-status">ON</strong>
-            <small>Troops contest mines and push forward automatically - Key T</small>
-          </button>
-          <div class="quick-command-grid">
-            <button data-objective="top" type="button"><strong>Q</strong><span>Top mine</span></button>
-            <button data-objective="bottom" type="button"><strong>E</strong><span>Bottom mine</span></button>
-            <button data-objective="base" type="button"><strong>Space</strong><span>Enemy base</span></button>
-          </div>
-          <button id="select-all" class="secondary-button hud-action" type="button">Select all troops (A)</button>
-          <p class="hud-help">
-            Objective AI handles forward movement. Base defense remains under your control.
-            Manual orders stay active until reached; hold Shift to select groups.
-          </p>
-          <p class="hud-selected"><span id="hud-selected">0</span> selected</p>
+          <section class="hud-overview">
+            <div class="hud-stat">
+              <span>Credits</span>
+              <strong id="hud-credits">300</strong>
+              <small><span id="hud-income">14</span> / sec</small>
+            </div>
+            <div class="hud-health-grid">
+              <div class="hud-stat">
+                <span>Your base</span>
+                <strong id="hud-base">1600</strong>
+              </div>
+              <div class="hud-stat">
+                <span>Enemy base</span>
+                <strong id="hud-enemy-base">1600</strong>
+              </div>
+            </div>
+            <div class="mine-status">
+              <div><span>Your mines</span><strong id="hud-mines">0</strong></div>
+              <div><span>Enemy mines</span><strong id="hud-enemy-mines">0</strong></div>
+            </div>
+          </section>
+          <section class="hud-controls">
+            <div class="automation-status-panel">
+              <span>Strategic commander</span>
+              <strong id="hud-commander-state">STAGING</strong>
+              <small>Chooses low-risk mines, defense, staging, and base attacks from live battle statistics.</small>
+            </div>
+            <div class="selection-actions">
+              <button id="select-all" class="secondary-button hud-action" type="button">Select all (A)</button>
+              <button id="deselect-all" class="secondary-button hud-action" type="button">Return to AI (G)</button>
+            </div>
+            <div class="tactical-actions">
+              <button class="secondary-button hud-action" data-tactical="surge" type="button">Surge (Z)</button>
+              <button class="secondary-button hud-action" data-tactical="brace" type="button">Brace (X)</button>
+              <button id="focus-fire" class="secondary-button hud-action" type="button">Focus (V)</button>
+            </div>
+          </section>
+          <section class="hud-guidance">
+            <p class="hud-help">
+              Keyboard: Tab unit, F frontline, R support, Q/E mines, B enemy base,
+              Z Surge, X Brace, V Focus Fire, H guard, G return to AI.
+            </p>
+            <p class="hud-selected">
+              <span id="hud-selected">0</span> selected ·
+              <span id="hud-unit-count">1</span>/<span id="hud-unit-cap">20</span> units
+            </p>
+            <p id="hud-status" class="hud-status" aria-live="polite">Commander ready</p>
+            <p class="hud-cooldown">Tactical cooldown: <strong id="hud-tactical-cooldown">Ready</strong></p>
+          </section>
         </aside>
-        <section id="game-canvas" class="game-canvas"></section>
       </section>
     </main>
   `;
@@ -752,6 +842,18 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
     }
   };
   document.querySelector("#leave-match").addEventListener("click", returnToMenu);
+  const battleHud = document.querySelector(".battle-hud");
+  battleHud.addEventListener(
+    "wheel",
+    (event) => {
+      if (battleHud.scrollWidth <= battleHud.clientWidth) return;
+      const movement = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!movement) return;
+      event.preventDefault();
+      battleHud.scrollLeft += movement;
+    },
+    { passive: false }
+  );
 
   let commandHandler = null;
   let stateHandler = null;
@@ -814,14 +916,25 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
       document.querySelector("#hud-mines").textContent = hud.ownedMines;
       document.querySelector("#hud-enemy-mines").textContent = hud.enemyMines;
       document.querySelector("#hud-selected").textContent = hud.selected;
-      const automationButton = document.querySelector("#toggle-automation");
-      const automationStatus = document.querySelector("#automation-status");
-      if (automationButton && automationStatus) {
-        automationButton.classList.toggle("is-active", hud.automationEnabled);
-        automationStatus.textContent = hud.automationEnabled ? "ON" : "OFF";
-      }
+      document.querySelector("#hud-unit-count").textContent = hud.unitCount;
+      document.querySelector("#hud-unit-cap").textContent = hud.unitCap;
+      document.querySelector("#hud-commander-state").textContent = hud.commanderState;
+      const hudStatus = document.querySelector("#hud-status");
+      hudStatus.textContent = hud.statusMessage;
+      hudStatus.dataset.tone = hud.statusTone;
+      document.querySelector("#hud-tactical-cooldown").textContent =
+        hud.tacticalCooldown > 0 ? `${hud.tacticalCooldown}s` : "Ready";
       document.querySelectorAll("[data-unit-type]").forEach((button) => {
-        button.disabled = hud.credits < hud.costs[button.dataset.unitType];
+        const atCap = hud.unitCount >= hud.unitCap;
+        const cost = hud.costs[button.dataset.unitType];
+        const unaffordable = hud.credits < cost;
+        button.disabled = atCap || unaffordable;
+        button.dataset.disabledReason = atCap ? "cap" : unaffordable ? "credits" : "";
+        button.title = atCap
+          ? `Army limit reached (${hud.unitCap})`
+          : unaffordable
+            ? `Need ${cost - hud.credits} more credits`
+            : `Recruit for ${cost} credits`;
       });
     },
   });
@@ -834,13 +947,16 @@ function launchGame({ mode, role = "host", roomCode = "", channel = null }) {
   document.querySelector("#select-all").addEventListener("click", () => {
     game?.events.emit("select-all-units");
   });
-  document.querySelector("#toggle-automation").addEventListener("click", () => {
-    game?.events.emit("toggle-automation");
+  document.querySelector("#deselect-all").addEventListener("click", () => {
+    game?.events.emit("deselect-all-units");
   });
-  document.querySelectorAll("[data-objective]").forEach((button) => {
+  document.querySelectorAll("[data-tactical]").forEach((button) => {
     button.addEventListener("click", () => {
-      game?.events.emit("command-objective", button.dataset.objective);
+      game?.events.emit("tactical-command", button.dataset.tactical);
     });
+  });
+  document.querySelector("#focus-fire").addEventListener("click", () => {
+    game?.events.emit("focus-fire");
   });
 }
 

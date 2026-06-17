@@ -77,23 +77,56 @@ requires an Apple Developer ID certificate and notarization.
 ## Gameplay
 
 - Earn credits automatically throughout the match.
-- Buy Soldiers with `1`, Rangers with `2`, and Tanks with `3`.
-- Tanks lead mixed formations and absorb contact, Soldiers close aggressively,
-  and Rangers maintain distance and retreat from nearby enemies.
-- Left click a troop to select it. Hold Shift to select multiple troops.
+- Use the five-slot unit hotbar or keys `1` through `5` to recruit Soldiers,
+  Rangers, Tanks, Medics, and Artillery.
+- Each team can field at most `20` units.
+- Soldiers catch Rangers and pin them in melee, briefly disrupting their fire.
+  Rangers pierce Tank armor from range. Tanks use flat armor, close-range
+  movement control, and knockback to stop Soldiers. Counters use mechanics
+  rather than hidden damage multipliers.
+- Mixed squads coordinate in combat: frontline troops protect threatened
+  support units, ranged troops anchor behind the line, Medics stay within
+  support range, allies focus targets, and Artillery requires allied spotting.
+- Tanks actively intercept enemies approaching Rangers, Medics, and Artillery.
+  Ranged units wait for a Soldier or Tank to establish coverage before taking
+  normal engagements, fall back when exposed, and regulate their pace so they
+  do not outrun slower frontline units.
+- Tank armor is weaker without nearby allies, Medics cannot fight alone, and
+  Artillery loses pressure without spotters. Costs reflect each unit's expected
+  contribution inside a coordinated army.
+- Left click troops to add or remove them from the current selection. Selections
+  accumulate without requiring Shift.
+- Selecting a troop immediately cancels its AI task and holds its position
+  while it waits for the next manual command.
 - Press `A` to select your entire army.
-- Toggle Objective AI with `T`. Both sides use the same mine-contesting and
-  forward-attack logic. Base defense remains under player control.
-- Send every troop to the top mine with `Q`, the bottom mine with `E`, or the
-  enemy base with `Space`.
+- Use **Deselect all** to release every manually held troop back to strategic AI.
+- The game can run autonomously: both commanders recruit balanced armies,
+  defend, regroup, contest objectives, and attack without player input.
+- Keyboard controls avoid mouse dependence: `Tab` cycles units, `F` selects
+  frontline troops, `R` selects support troops, `Q`/`E` cycle mine orders,
+  `B` attacks the enemy base, `Space` moves to the camera center, `H` guards,
+  `G` returns troops to AI, and `C` focuses the selected squad.
+- Tactical abilities raise the execution ceiling. `Z` activates **Surge** for
+  faster movement and attacks at the cost of increased incoming damage. `X`
+  activates **Brace** for strong damage reduction at the cost of movement and
+  attack tempo. `V` orders **Focus Fire** on the enemy nearest the camera
+  center. Each unit has a 14-second tactical cooldown.
+- Strategic AI is always active. It chooses low-risk mines, defense, staging,
+  and base attacks from army strength, mine control, and base health.
+- Move the pointer to any battlefield edge to scroll the camera. Arrow keys
+  also move the camera on the larger map.
 - Click empty ground after selecting troops to direct them there. Right click
-  also issues a formation move command. Manual orders remain active until the
-  destination is reached or the objective is completed.
+  also issues a formation move command. Manually commanded troops ignore combat
+  until they reach their assigned formation positions, then guard and fight
+  from those positions until the player deselects them.
 - Troops automatically attack enemies and bases in range.
-- Capture the top and bottom gold mines for `+6` credits per second each.
+- Capture any of the seven gold mines for `+6` credits per second each.
 - Mines reset to full health when captured and can be recaptured by attacking
   them with troops.
 - Destroy the enemy base to win.
+- After victory or defeat, choose **Play again** or press `Enter` to reset the
+  battlefield while keeping the same friend room and connection.
+- Open **Keybinds** from the main menu for the complete keyboard reference.
 
 Friend matches use the room host as the authoritative economy and combat
 simulation. Guests send commands and receive synchronized battle snapshots.

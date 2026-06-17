@@ -341,6 +341,9 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
+  max-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #070b13;
 }
 
@@ -375,7 +378,7 @@ button:disabled {
 
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
   margin-top: 48px;
 }
@@ -459,32 +462,180 @@ button:disabled {
   margin-top: 22px;
 }
 
-.game-shell {
+.keybinds-shell {
+  overflow-y: auto;
+}
+
+.keybinds-content {
+  width: min(1180px, 100%);
+}
+
+.keybind-grid {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 34px;
+  padding-bottom: 40px;
+}
+
+.keybind-card {
+  padding: 22px;
+  border: 1px solid #26364d;
+  border-radius: 16px;
+  background: rgba(13, 21, 35, 0.92);
+}
+
+.keybind-card h2 {
+  margin: 0 0 14px;
+  color: #58e6c2;
+}
+
+.keybind-row {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(52, 65, 88, 0.55);
+  color: #cbd5e1;
+}
+
+.keybind-row kbd {
+  justify-self: start;
+  min-width: 44px;
+  padding: 6px 9px;
+  border: 1px solid #50617b;
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  color: #f8fafc;
+  background: #121b2a;
+  font: 800 0.78rem/1 system-ui;
+  text-align: center;
+}
+
+.game-shell {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
   background: #070b13;
 }
 
 .battle-layout {
   min-height: 0;
+  height: 100%;
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-rows: minmax(180px, 1fr) minmax(164px, auto);
+  overflow: hidden;
 }
 
 .battle-hud {
-  min-height: 0;
-  padding: 20px;
+  display: grid;
+  grid-template-columns: minmax(650px, 2.5fr) minmax(195px, 0.75fr) minmax(250px, 0.95fr) minmax(170px, 0.6fr);
+  gap: 8px;
+  min-width: 0;
+  min-height: 164px;
+  max-height: min(210px, 30vh);
+  padding: 7px 10px 9px;
+  overflow-x: auto;
   overflow-y: auto;
-  border-right: 1px solid #202b3d;
+  scrollbar-gutter: stable;
+  scrollbar-color: #58e6c2 #111a29;
+  scrollbar-width: thin;
+  border-top: 1px solid #202b3d;
   background:
-    linear-gradient(180deg, rgba(88, 230, 194, 0.035), transparent 28%),
+    linear-gradient(90deg, rgba(88, 230, 194, 0.035), transparent 28%),
     #090f1a;
+}
+
+.battle-hud::-webkit-scrollbar {
+  height: 9px;
+}
+
+.battle-hud::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #111a29;
+}
+
+.battle-hud::-webkit-scrollbar-thumb {
+  border: 2px solid #111a29;
+  border-radius: 999px;
+  background: #58e6c2;
+}
+
+.hud-overview,
+.hud-controls,
+.hud-guidance {
+  min-width: 0;
+  min-height: 0;
+}
+
+.hud-overview {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.75fr) minmax(120px, 1.25fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+
+.hud-overview > .hud-stat {
+  grid-row: 1 / -1;
+}
+
+.hud-overview .hud-health-grid,
+.hud-overview .mine-status {
+  margin-top: 0;
+}
+
+.hud-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto auto;
+  gap: 5px;
+}
+
+.hud-controls .hud-action {
+  min-width: 0;
+}
+
+.selection-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-row: 2;
+  gap: 5px;
+}
+
+.tactical-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.tactical-actions .hud-action:first-child {
+  border-color: rgba(246, 196, 83, 0.55);
+  color: #f8df91;
+}
+
+.tactical-actions .hud-action:nth-child(2) {
+  border-color: rgba(139, 184, 255, 0.55);
+  color: #b9d4ff;
+}
+
+.hud-cooldown {
+  margin: 3px 0 0;
+  color: #91a0b8;
+  font-size: 0.72rem;
+}
+
+.hud-cooldown strong {
+  color: #f6c453;
 }
 
 .hud-stat {
   display: grid;
   gap: 3px;
-  padding: 13px;
+  padding: 8px;
   border: 1px solid #26364d;
   border-radius: 10px;
   background: #101827;
@@ -498,7 +649,7 @@ button:disabled {
 
 .hud-stat strong {
   color: #58e6c2;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
 }
 
 .hud-stat small {
@@ -508,21 +659,21 @@ button:disabled {
 .hud-health-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 .mine-status {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 .mine-status div {
   display: grid;
   gap: 3px;
-  padding: 10px;
+  padding: 6px 8px;
   border: 1px solid #4a4126;
   border-radius: 9px;
   background: #1c1a12;
@@ -544,17 +695,24 @@ button:disabled {
 
 .troop-shop {
   display: grid;
-  gap: 9px;
-  margin-top: 24px;
+  grid-template-columns: repeat(5, minmax(118px, 1fr));
+  grid-template-rows: auto 1fr;
+  gap: 7px;
+  min-width: 650px;
+}
+
+.troop-shop .eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .troop-button {
   display: grid;
-  grid-template-columns: 42px 1fr auto;
+  grid-template-columns: 30px 1fr auto;
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 3px 10px;
-  padding: 12px;
+  gap: 2px 6px;
+  padding: 5px 7px;
   border: 1px solid #344158;
   border-radius: 10px;
   text-align: left;
@@ -565,13 +723,31 @@ button:disabled {
 
 .troop-button:hover:not(:disabled) {
   border-color: #58e6c2;
-  transform: translateX(3px);
+  transform: translateY(-2px);
   background: #162236;
 }
 
+.troop-button:disabled {
+  cursor: default;
+  filter: saturate(0.55);
+  opacity: 0.48;
+}
+
+.troop-button[data-disabled-reason="cap"] {
+  border-color: rgba(255, 100, 124, 0.38);
+}
+
+.troop-button--medic {
+  border-color: rgba(140, 244, 220, 0.42);
+}
+
+.troop-button--artillery {
+  border-color: rgba(246, 196, 83, 0.42);
+}
+
 .troop-button img {
-  width: 38px;
-  height: 44px;
+  width: 28px;
+  height: 34px;
   grid-row: 1 / 3;
   object-fit: contain;
   filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.55));
@@ -585,11 +761,14 @@ button:disabled {
 .troop-button small {
   grid-column: 2 / -1;
   color: #91a0b8;
+  font-size: 0.68rem;
+  line-height: 1.2;
 }
 
 .hud-action {
   width: 100%;
-  margin-top: 16px;
+  margin-top: 0;
+  padding: 6px 8px;
 }
 
 .automation-button {
@@ -597,8 +776,8 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 3px 10px;
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: 0;
+  padding: 8px;
   border: 1px solid #344158;
   border-radius: 10px;
   text-align: left;
@@ -625,17 +804,45 @@ button:disabled {
   color: #58e6c2;
 }
 
+.automation-status-panel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: center;
+  gap: 3px 10px;
+  padding: 8px;
+  border: 1px solid rgba(88, 230, 194, 0.55);
+  border-radius: 10px;
+  color: #dbeafe;
+  background: rgba(24, 67, 59, 0.45);
+}
+
+.automation-status-panel span {
+  color: #9aead8;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.automation-status-panel strong {
+  color: #58e6c2;
+}
+
+.automation-status-panel small {
+  grid-column: 1 / -1;
+  color: #91a0b8;
+  line-height: 1.3;
+}
+
 .quick-command-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-  margin-top: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 0;
 }
 
 .quick-command-grid button {
   display: grid;
   gap: 2px;
-  padding: 9px;
+  padding: 6px;
   border: 1px solid #344158;
   border-radius: 9px;
   color: #cbd5e1;
@@ -643,7 +850,7 @@ button:disabled {
 }
 
 .quick-command-grid button:last-child {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .quick-command-grid button:hover {
@@ -667,24 +874,52 @@ button:disabled {
   line-height: 1.5;
 }
 
+.hud-help {
+  margin-top: 5px;
+}
+
 .hud-selected {
   color: #dbeafe;
+  margin-bottom: 0;
+  font-weight: 700;
+}
+
+.hud-status {
+  min-height: 20px;
+  margin: 4px 0 0;
+  color: #aab6ca;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.hud-status[data-tone="success"] {
+  color: #8cf4dc;
+}
+
+.hud-status[data-tone="warning"] {
+  color: #ffb1bf;
 }
 
 .game-canvas {
   min-height: 0;
-  display: grid;
+  min-width: 0;
+  position: relative;
   overflow: hidden;
-  padding: 10px;
+  padding: 0;
   background:
     radial-gradient(circle at center, rgba(88, 230, 194, 0.05), transparent 55%),
     #080d16;
 }
 
 .game-canvas canvas {
+  display: block;
   max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
   border: 1px solid #26364d;
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42);
 }
 
@@ -696,9 +931,23 @@ code {
   display: none !important;
 }
 
+@media (max-width: 1240px) {
+  .mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode-card {
+    min-height: 190px;
+  }
+}
+
 @media (max-width: 900px) {
   .auth-layout,
   .mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .keybind-grid {
     grid-template-columns: 1fr;
   }
 
@@ -716,6 +965,75 @@ code {
   }
 
   .battle-layout {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 1fr) minmax(158px, auto);
+  }
+
+  .battle-hud {
+    grid-template-columns: 620px 190px 240px 165px;
+    padding: 6px 8px 8px;
+  }
+}
+
+@media (max-height: 760px) {
+  .game-header {
+    padding: 9px 16px;
+  }
+
+  .game-header .eyebrow {
+    margin: 0;
+  }
+
+  .battle-layout {
+    grid-template-rows: minmax(150px, 1fr) minmax(142px, auto);
+  }
+
+  .battle-hud {
+    min-height: 142px;
+    max-height: 28vh;
+    padding-block: 5px 8px;
+  }
+
+  .troop-button small,
+  .automation-status-panel small,
+  .hud-help {
+    display: none;
+  }
+
+  .hud-stat,
+  .automation-button {
+    padding: 7px 9px;
+  }
+
+  .troop-button {
+    padding: 4px 6px;
+  }
+
+  .troop-button img {
+    width: 25px;
+    height: 30px;
+  }
+
+  .mine-status {
+    display: none;
+  }
+}
+
+@media (max-height: 560px) {
+  .battle-layout {
+    grid-template-rows: minmax(120px, 1fr) minmax(118px, auto);
+  }
+
+  .troop-shop {
+    grid-template-rows: 14px 1fr;
+  }
+
+  .hud-health-grid,
+  .quick-command-grid {
+    margin-top: 3px;
+  }
+
+  .battle-hud {
+    min-height: 118px;
+    max-height: 30vh;
   }
 }
